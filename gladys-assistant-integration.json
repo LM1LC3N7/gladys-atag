@@ -6,8 +6,8 @@
     "en": "Atag One thermostat on your network: room temperature, setpoint, mode, boiler, hot water, pressure.",
     "fr": "Thermostat Atag One sur votre réseau : température, consigne, mode, chaudière, eau chaude, pression."
   },
-  "version": "0.1.0",
-  "docker_image": "ghcr.io/lm1lc3n7/gladys-atag:0.1.0",
+  "version": "0.1.1",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-atag:0.1.1",
   "gladys_version": ">=5.1.0",
   "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-atag/main/cover.png",
   "categories": ["climate"],

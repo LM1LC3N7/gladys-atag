@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-26
+
 ### Added
 
 - First version: the Atag One thermostat through its local HTTP interface
@@ -30,4 +32,5 @@ the notes of the version's GitHub Release.
 - A report whose own time stops moving for 2 hours is no longer published.
 - "Test the connection" button; documentation in English and French.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-atag/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-atag/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-atag/releases/tag/v0.1.1
