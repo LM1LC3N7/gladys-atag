@@ -226,11 +226,8 @@ test('pairing pending: asked again 1, 2, 4, 8, 15 min, then no more (8 requests)
     gladys.fake.connectionStatus.message.en,
     /no more automatic requests.*Test the connection/,
   );
-  assert.equal(
-    fake.requests.filter((r) => r.path === '/retrieve').length,
-    1,
-    'never polled meanwhile',
-  );
+  const retrieves = fake.requests.filter((r) => r.path === '/retrieve').length;
+  assert.ok(retrieves >= 20 && retrieves <= 26, `a plain read an hour, no request: ${retrieves}`);
 });
 
 test('pairing requests spent: a restart does not reset them; the button sends one', async () => {
@@ -250,7 +247,12 @@ test('pairing requests spent: a restart does not reset them; the button sends on
   );
   assert.match(gladys.fake.connectionStatus.message.en, /no more automatic requests/);
   await wait(HOUR);
-  assert.equal(fake.requests.length, 1, 'nothing more by itself');
+  assert.deepEqual(
+    fake.requests.map((r) => r.path),
+    ['/retrieve', '/retrieve'],
+    'a plain read an hour, never a pairing request by itself',
+  );
+  await wait(MINUTE); // the button keeps the pace too
   const result = await gladys.fake.action('test_connection', {});
   assert.equal(result.success, false);
   assert.equal(pairs(), 1, 'the button sent one');
@@ -623,4 +625,41 @@ test('an HTTP error is told as an answer, not as silence', async () => {
   fake.failures.push({ path: '/retrieve', status: 503 });
   await wait(MINUTE);
   assert.match(gladys.fake.connectionStatus.message.en, /answers with HTTP error 503/);
+});
+
+test('pairing requests spent, then confirmed late on the screen: the hourly read sees it', async () => {
+  const fake = createFakeThermostat();
+  fake.pending = true;
+  const store = memoryStore({
+    mac: MAC,
+    lastAttemptAt: T0 - HOUR,
+    pair: { failures: 8, nextAt: 0 },
+  });
+  const { gladys, wait } = await boot({ fake, store });
+  assert.match(gladys.fake.connectionStatus.message.en, /no more automatic requests/);
+  fake.pending = false; // confirmed on the screen (an earlier request) later on
+  await wait(HOUR);
+  assert.deepEqual(gladys.fake.connectionStatus, okStatus);
+  assert.equal(fake.requests.filter((r) => r.path === '/pair').length, 0);
+  assert.equal(store.data.pair.failures, 0);
+  // Back to the normal pace.
+  await wait(MINUTE);
+  assert.equal(fake.requests.filter((r) => r.path === '/retrieve').length, 3);
+});
+
+test('a room setpoint set on the thermostat outside 4-27 °C is still shown', async () => {
+  const { gladys, fake, wait } = await boot();
+  fake.report = { chModeTemp: 28, reportTime: 843_000_060 };
+  await wait(MINUTE);
+  assert.equal(state(gladys, thermostat(), 'target'), 28);
+  fake.report = { chModeTemp: 3.5, reportTime: 843_000_120 };
+  await wait(MINUTE);
+  assert.equal(state(gladys, thermostat(), 'target'), 3.5);
+});
+
+test('/data unreadable: the status says how to start again', async () => {
+  const store = memoryStore({ mac: MAC }, { unreadable: true });
+  const { gladys } = await boot({ store });
+  assert.match(gladys.fake.connectionStatus.message.en, /uninstall then reinstall/);
+  assert.match(gladys.fake.connectionStatus.message.fr, /désinstallez puis réinstallez/);
 });

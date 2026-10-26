@@ -50,8 +50,10 @@ Gladys ⇄ SDK ⇄ src/app.js (AtagApp)
   clamped. The thermostat is read again just before acting; nothing leaves
   past 3.5 s after the command, the exchange then gets 10 s; Gladys is
   answered 4.3 s after the command at the latest; the read 5 s later is the
-  only confirmation. Commands run one after the other, 6 per kind and per
-  minute at most. No feature is a switch.
+  only confirmation. Commands run one after the other; a command held behind
+  an unanswered one is refused at once with that reason; 6 raises or mode
+  changes per minute at most, lowerings never held back. No feature is a
+  switch.
 - **Reconnection to Gladys**: Discovery, badges, status and the fresh states
   are published again; the client, the pairing state and the pace stay. The
   configuration Gladys does not give is asked again without end (10 min at

@@ -76,6 +76,14 @@ up to date at the end of every milestone.
       feature bounds not published; `report_time` kept in /data; the time of
       every read written; the confirming read compares; 6 updates per kind
       and per minute; docs without absolutes.
+- [x] **Review r2 corrections** (2026-10-26): the anti-loop limit counts and
+      holds back raises and mode changes only (checked after the fresh read),
+      a lowering always passes; the wait in the client queue is bounded by
+      the command's deadline ("not answered the previous request yet");
+      setpoints read published over 0-40 °C (room) and 0-100 °C (hot water);
+      /data unreadable: the status and docs say to reinstall (the core erases
+      /data at uninstall); after the 8 pairing requests, a plain read every
+      hour sees a pairing confirmed late.
 - [ ] **SDK 0.16.0**: not on npm yet (`npm view` gives 0.15.0 on
       2026-10-26): migrate once published, with the next wave,
       with `keywords` (atag, one, thermostat, boiler, chaudière, heating,
@@ -176,8 +184,11 @@ up to date at the end of every milestone.
   answer: the read 5 s later tells", "refused" only for an HTTP error or a
   pairing refusal. An update is never retried (it may have been applied); the
   read 5 s later is the only confirmation, and compares (a value not seen is
-  logged and said in the status). 6 updates per kind and per sliding minute
-  at most. A warning (codes only) per failed command. Values: a finite
+  logged and said in the status). 6 raises (or mode changes) per kind and
+  per sliding minute at most, checked after the fresh read; a lowering is
+  the way to heat less (no off here) and is never held back nor counted.
+  The wait of a command's request in the client queue is bounded by its
+  deadline: behind an unanswered update, refused at once with that cause. A warning (codes only) per failed command. Values: a finite
   number or a plain decimal string (`/^-?\d+(\.\d+)?$/`), nothing else.
 - **Fahrenheit**: temperatures converted to °C in `parseReport` (one
   decimal), commands converted back (`toDeviceUnit`); tested with real

@@ -35,14 +35,17 @@ Unofficial integration, not affiliated with Atag.
   confirmation, the request is sent again after 1 min, then 2, 4, 8, 15 min,
   **8 requests at most**; then Gladys sends none by itself and the status
   tells you to press **Test the connection** (or save the configuration) to
-  send one again. This count is kept across a restart. The identity Gladys
+  send one again. A plain read every hour (no request on the screen) sees a
+  pairing confirmed late. This count is kept across a restart. The identity Gladys
   gives the thermostat is drawn at random once and kept in the data of the
   integration (`/data`):
   - no file yet (first start): a fresh identity is drawn and written;
   - a file that cannot be read (permissions, disk, damaged content): Gladys
     does not rewrite it and sends nothing to the thermostat (no pairing
     request with a new identity); the status says so and the file is read
-    again every minute;
+    again every minute. If it lasts, uninstall then reinstall the
+    integration: uninstalling erases its data, and a new pairing will be
+    asked on the screen of the thermostat;
   - a file that cannot be written: the integration works, but the status
     warns that a restart will ask for the pairing again.
 - **Commands**: three options, all off by default (see Commands).
@@ -96,13 +99,15 @@ the following cases, each with its message:
 - the pairing is not confirmed (known from an earlier read, or told by the
   read of the command);
 - the read fails, or the command can no longer leave within 3.5 s of its
-  arrival (for instance while an earlier command is still running);
+  arrival;
+- the thermostat has not answered the previous request or command yet (a
+  message says so; try again a few seconds later);
 - another thermostat answers at the address;
 - the configuration changed meanwhile;
 - hot water is asked on a thermostat in Fahrenheit, or the thermostat gives
   no usable hot water bounds;
-- more than 6 commands of the same kind were sent within the last minute (a
-  scene in a loop);
+- more than 6 setpoint raises (or mode changes) were sent within the last
+  minute (a scene in a loop); lowering a setpoint is not held back;
 - the value is already the one asked: the command then succeeds without
   sending.
 
@@ -140,7 +145,9 @@ least one second apart (it drops faster callers).
   everything resumes as soon as the report moves. That time is kept across a
   restart. A thermostat that gives no such time cannot be checked this way.
 - A value outside the bounds of its feature (a missing probe, an aberrant
-  answer) is not published.
+  answer) is not published. The setpoints read are published over a wider
+  range than the commands' (room 0 to 40 °C, hot water up to 100 °C): a
+  setpoint set on the thermostat itself stays visible.
 - The water and outside temperatures are probes: Gladys keeps them out of the
   temperature of the room the thermostat is in.
 - A thermostat set to Fahrenheit: room, outside and heating water

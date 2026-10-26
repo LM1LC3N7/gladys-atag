@@ -208,10 +208,15 @@ const bit = (value) => (value === null ? null : value ? 1 : 0);
 
 /**
  * What a reading may be to be published: the `min`/`max` of its feature,
- * except the hot water setpoint, whose feature stops at the command cap
- * (60 °C) while a thermostat may report up to its own maximum.
+ * except the setpoints, whose features stop at the command bounds while a
+ * thermostat may report more (set on the thermostat itself).
  */
-const READING_BOUNDS = Object.freeze({ [BF.DHW_TARGET]: [0, 100] });
+const READING_BOUNDS = Object.freeze({
+  [BF.DHW_TARGET]: [0, 100],
+  // The room setpoint set on the thermostat itself may leave the 4-27 °C of
+  // the commands (a range taken from the manual, not verified): shown.
+  [TF.TARGET]: [0, 40],
+});
 
 /**
  * The states of the created devices for a report of `deviceId`

@@ -38,15 +38,18 @@ Intégration non officielle, sans lien avec Atag.
   confirmation, la demande est renvoyée après 1 min, puis 2, 4, 8, 15 min,
   **8 demandes au plus** ; ensuite Gladys n'en envoie plus seule et le statut
   vous dit d'appuyer sur **Tester la connexion** (ou d'enregistrer la
-  configuration) pour en renvoyer une. Ce compte est gardé à travers un
-  redémarrage. L'identité que Gladys donne au thermostat est tirée au sort
+  configuration) pour en renvoyer une. Une simple lecture par heure (sans
+  demande sur l'écran) voit un appairage confirmé tard. Ce compte est gardé à
+  travers un redémarrage. L'identité que Gladys donne au thermostat est tirée au sort
   une fois et gardée dans les données de l'intégration (`/data`) :
   - pas encore de fichier (premier démarrage) : une identité neuve est tirée
     et écrite ;
   - fichier présent mais illisible (droits, disque, contenu abîmé) : Gladys
     ne le réécrit pas et n'envoie rien au thermostat (pas de demande
     d'appairage avec une nouvelle identité) ; le statut le dit et le fichier
-    est relu chaque minute ;
+    est relu chaque minute. Si cela dure, désinstallez puis réinstallez
+    l'intégration : la désinstallation efface ses données, et un nouvel
+    appairage sera demandé sur l'écran du thermostat ;
   - fichier impossible à écrire : l'intégration fonctionne, mais le statut
     prévient qu'un redémarrage redemandera l'appairage.
 - **Commandes** : trois options, toutes désactivées par défaut (voir
@@ -103,14 +106,16 @@ cas suivants, chacun avec son message :
 - l'appairage n'est pas confirmé (connu par une lecture précédente, ou dit
   par la relecture de la commande) ;
 - la relecture échoue, ou la commande ne peut plus partir dans les 3,5 s qui
-  suivent son arrivée (par exemple quand une commande précédente est encore
-  en cours) ;
+  suivent son arrivée ;
+- le thermostat n'a pas encore répondu à la requête ou à la commande
+  précédente (message qui le dit ; réessayez quelques secondes plus tard) ;
 - un autre thermostat répond à l'adresse ;
 - la configuration a changé entre-temps ;
 - l'eau chaude est demandée sur un thermostat en Fahrenheit, ou le thermostat
   ne donne pas de bornes d'eau chaude utilisables ;
-- plus de 6 commandes du même genre ont été envoyées dans la dernière minute
-  (une scène qui boucle) ;
+- plus de 6 hausses de consigne (ou changements de mode) ont été envoyées
+  dans la dernière minute (une scène qui boucle) ; une baisse de consigne
+  n'est pas limitée ;
 - la valeur est déjà celle demandée : la commande est alors un succès, sans
   envoi.
 
@@ -151,7 +156,10 @@ rapprochés).
   redémarrage. Un thermostat qui ne donne pas cette heure ne peut pas être
   vérifié ainsi.
 - Une valeur hors des bornes de sa fonctionnalité (une sonde absente, une
-  réponse aberrante) n'est pas publiée.
+  réponse aberrante) n'est pas publiée. Les consignes lues sont publiées sur
+  une plage plus large que celle des commandes (pièce 0 à 40 °C, eau chaude
+  jusqu'à 100 °C) : une consigne réglée sur le thermostat lui-même reste
+  visible.
 - Les températures de l'eau et de l'extérieur sont des sondes : Gladys ne les
   compte pas dans la température de la pièce où se trouve le thermostat.
 - Un thermostat réglé en Fahrenheit : températures de la pièce, de

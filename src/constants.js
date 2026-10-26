@@ -98,6 +98,8 @@ export const INTERVALS = Object.freeze({
   /** Pairing not confirmed on the screen: the request is sent again, more and more rarely. */
   PAIR_MIN_MS: 60_000,
   PAIR_MAX_MS: 15 * 60_000,
+  /** The pairing requests spent: a plain read (never a request) this often. */
+  STOPPED_PROBE_MS: 3600_000,
   /** A report older than this (last successful read) is never published. */
   FRESH_MS: 2 * 60_000,
   /** The configuration of Gladys not read: asked again 30 s, 1 min, 2 min... 10 min at most. */

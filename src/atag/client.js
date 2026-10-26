@@ -40,7 +40,15 @@ export class ThermostatClient {
    * @param {() => number} [options.monotonic]
    * @param {(ms: number) => Promise<void>} [options.sleep]
    */
-  constructor({ origin, mac, request = httpPost, monotonic, sleep = defaultSleep }) {
+  constructor({
+    origin,
+    mac,
+    request = httpPost,
+    monotonic,
+    sleep = defaultSleep,
+    timers = { setTimeout, clearTimeout },
+  }) {
+    this.timers = timers;
     this.origin = origin;
     this.mac = mac;
     this.request = request;
@@ -60,10 +68,33 @@ export class ThermostatClient {
   }
 
   /** Run `task` after every request already queued (one at a time). */
-  serial(task) {
-    const run = this.queue.then(task);
+  serial(task, { deadline } = {}) {
+    let started = false;
+    let cancelled = false;
+    const run = this.queue.then(() => {
+      if (cancelled) {
+        throw notSent(new ThermostatError(CODES.BUSY, 'Previous request still running'));
+      }
+      started = true;
+      return task();
+    });
     this.queue = run.catch(() => {});
-    return run;
+    if (deadline === undefined) return run;
+    // The wait in the queue is bounded too: past `deadline` - MIN_SEND_MS
+    // without having started, the request is dropped (never sent late) and
+    // the caller learns the true cause at once.
+    let id;
+    const limit = new Promise((_, reject) => {
+      id = this.timers.setTimeout(
+        () => {
+          if (started) return;
+          cancelled = true;
+          reject(notSent(new ThermostatError(CODES.BUSY, 'Previous request still running')));
+        },
+        Math.max(0, deadline - MIN_SEND_MS - this.monotonic()),
+      );
+    });
+    return Promise.race([run, limit]).finally(() => this.timers.clearTimeout(id));
   }
 
   /** The ms this request may take, from the caller's instant; throws when none is left. */
@@ -133,15 +164,18 @@ export class ThermostatClient {
 
   /** A read: tried again when the thermostat closes the connection. */
   async read(path, message, options = {}) {
-    return this.serial(async () => {
-      for (let attempt = 1; ; attempt += 1) {
-        try {
-          return await this.post(path, message, options);
-        } catch (err) {
-          if (err?.code !== CODES.RESET || attempt >= READ_TRIES) throw err;
+    return this.serial(
+      async () => {
+        for (let attempt = 1; ; attempt += 1) {
+          try {
+            return await this.post(path, message, options);
+          } catch (err) {
+            if (err?.code !== CODES.RESET || attempt >= READ_TRIES) throw err;
+          }
         }
-      }
-    });
+      },
+      { deadline: options.deadline },
+    );
   }
 
   /**
@@ -200,6 +234,8 @@ export class ThermostatClient {
     const message = {
       update_message: { seqnr: 0, account_auth: this.auth(), control, configuration: {} },
     };
-    return this.serial(() => this.post('update', message, { sendDeadline: deadline, onSent }));
+    return this.serial(() => this.post('update', message, { sendDeadline: deadline, onSent }), {
+      deadline,
+    });
   }
 }

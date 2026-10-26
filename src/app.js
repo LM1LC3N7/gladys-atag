@@ -359,6 +359,7 @@ export class AtagApp {
       mac: this.memory.mac,
       request: this.request,
       monotonic: this.monotonic,
+      timers: this.timers,
       ...(this.sleep ? { sleep: this.sleep } : {}),
     });
     this.logger.info(`Using the thermostat at ${this.config.thermostat.origin}`);
@@ -439,10 +440,15 @@ export class AtagApp {
   /** One timer: the next read when it is due (none once the pairing requests are spent). */
   schedule() {
     this.clearLoopTimer();
-    if (!this.running || !this.client || this.pairingStopped()) return;
+    if (!this.running || !this.client) return;
     const epoch = this.epoch;
     const mono = this.monotonic();
-    const wait = Math.max(0, this.dueAt(mono) - mono);
+    // The pairing requests spent: a plain read every hour (no request on the
+    // screen) sees a pairing confirmed late.
+    const due = this.pairingStopped()
+      ? Math.max(this.dueAt(mono), (this.lastReadAt ?? mono) + INTERVALS.STOPPED_PROBE_MS)
+      : this.dueAt(mono);
+    const wait = Math.max(0, due - mono);
     this.timer = this.timers.setTimeout(async () => {
       this.timer = undefined;
       try {
@@ -473,7 +479,7 @@ export class AtagApp {
     if (!client || !this.running) return;
     const mono = this.monotonic();
     if (!confirm && mono < this.dueAt(mono)) return;
-    if (this.pairingStopped()) return;
+    const stopped = this.pairingStopped();
     /** Another configuration (or a stop) during an await: this read gives up, silently. */
     const gone = () => client !== this.client || !this.running;
     this.lastReadAt = mono;
@@ -492,7 +498,7 @@ export class AtagApp {
       return true;
     };
     try {
-      if (this.authorized === false) {
+      if (this.authorized === false && !stopped) {
         if (!(await pair())) return;
       }
       try {
@@ -527,8 +533,7 @@ export class AtagApp {
         pair.nextAt = 0;
         this.pairDueAt = undefined;
         await this.save();
-        this.logger.warn('Pairing not confirmed: no more automatic requests');
-        this.clearLoopTimer();
+        if (pairSent) this.logger.warn('Pairing not confirmed: no more automatic requests');
         await this.setStatus(false, T.status.pairingStopped);
         return;
       }
@@ -806,9 +811,13 @@ export class AtagApp {
       this.stillValid({ client, generation, spec });
       const deadline = received + COMMAND_BUDGET_MS;
       const mono = this.monotonic();
-      if (deadline - mono < COMMAND_MIN_READ_MS) throw new Error(T.errors.tooSlow);
-      if (this.writesLeft(spec.kind, mono) <= 0) {
-        throw new Error(T.errors.tooMany(LIMITS.WRITES_PER_MINUTE));
+      if (deadline - mono < COMMAND_MIN_READ_MS) {
+        // Held behind an earlier command still waiting for the thermostat.
+        throw new Error(
+          mono - received > COMMAND_BUDGET_MS - COMMAND_MIN_READ_MS - 1
+            ? T.errors.previousBusy
+            : T.errors.tooSlow,
+        );
       }
       let report;
       try {
@@ -825,10 +834,16 @@ export class AtagApp {
       if (report.deviceId !== spec.parsed.deviceId) throw new Error(T.errors.otherThermostat);
       const control = this.controlOf(spec, report);
       if (control === null) return; // already there: nothing sent
+      // The anti-loop limit holds back raises and mode changes only: lowering
+      // a setpoint is the way to heat less (no "off" here), never held back.
+      const limited = this.raises(spec, report);
+      if (limited && this.writesLeft(spec.kind, this.monotonic()) <= 0) {
+        throw new Error(T.errors.tooMany(LIMITS.WRITES_PER_MINUTE));
+      }
       if (deadline - this.monotonic() < COMMAND_MIN_SEND_MS) throw new Error(T.errors.tooSlow);
       // The last check before acting: the user may have changed things meanwhile.
       this.stillValid({ client, generation, spec });
-      await this.send({ client, generation, spec, control, received, deadline });
+      await this.send({ client, generation, spec, control, received, deadline, limited });
     } catch (err) {
       // Codes only: never the text of an answer.
       this.logger.warn(`${label} failed: ${err?.cause?.code ?? 'refused'}`);
@@ -871,6 +886,13 @@ export class AtagApp {
     return { dhw_temp_setp: spec.value };
   }
 
+  /** A raise (or a mode change, or a setpoint whose current value is unknown). */
+  raises(spec, report) {
+    if (spec.kind === 'mode') return true;
+    const current = spec.kind === 'setpoint' ? report.targetTemperature : report.dhwTarget;
+    return current === null || spec.value > current;
+  }
+
   /** The value a command asked is the one a report shows. */
   applied(spec, report) {
     if (spec.kind === 'setpoint') {
@@ -881,13 +903,13 @@ export class AtagApp {
   }
 
   /** Send, then answer Gladys on the thermostat's answer or at COMMAND_ACK_MS, whichever first. */
-  async send({ client, generation, spec, control, received, deadline }) {
+  async send({ client, generation, spec, control, received, deadline, limited }) {
     let sent = false;
     const request = client.update(control, {
       deadline,
       onSent: () => {
         sent = true;
-        this.writes.get(spec.kind)?.push(this.monotonic());
+        if (limited) this.writes.get(spec.kind)?.push(this.monotonic());
       },
     });
     let handle;

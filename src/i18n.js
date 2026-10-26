@@ -34,6 +34,11 @@ export function reasonOf(err) {
       return { en: 'pairing not confirmed', fr: 'appairage non confirmé' };
     case CODES.CLOSED:
       return { en: 'configuration changed', fr: 'configuration changée' };
+    case CODES.BUSY:
+      return {
+        en: 'the thermostat has not answered the previous request yet',
+        fr: 'le thermostat n’a pas encore répondu à la requête précédente',
+      };
     case CODES.REFUSED:
       return {
         en: 'values refused by the last check',
@@ -88,16 +93,16 @@ export const T = {
           : { en: '', fr: '' },
       ),
     dataUnreadable: {
-      en: 'The data of the integration (/data) cannot be read: the pairing identity is not rewritten and nothing is sent to the thermostat. Read again every minute.',
-      fr: 'Les données de l’intégration (/data) sont illisibles : l’identité d’appairage n’est pas réécrite et rien n’est envoyé au thermostat. Nouvelle lecture toutes les minutes.',
+      en: 'The data of the integration (/data) cannot be read: the pairing identity is not rewritten and nothing is sent to the thermostat. Read again every minute. If it lasts, uninstall then reinstall the integration (uninstalling erases its data): a new pairing will be asked on the screen of the thermostat.',
+      fr: 'Les données de l’intégration (/data) sont illisibles : l’identité d’appairage n’est pas réécrite et rien n’est envoyé au thermostat. Nouvelle lecture toutes les minutes. Si cela dure, désinstallez puis réinstallez l’intégration (la désinstallation efface ses données) : un nouvel appairage sera demandé sur l’écran du thermostat.',
     },
     configNotRead: (delay) => ({
       en: `The configuration of Gladys is not read yet. Asked again in ${minutes(delay)} min.`,
       fr: `La configuration de Gladys n’est pas encore lue. Nouvel essai dans ${minutes(delay)} min.`,
     }),
     pairingStopped: {
-      en: 'Pairing not confirmed on the screen of the thermostat: no more automatic requests. Press "Test the connection" (or save the configuration) to send one again.',
-      fr: 'Appairage non confirmé sur l’écran du thermostat : plus de demande automatique. Appuyez sur « Tester la connexion » (ou enregistrez la configuration) pour en renvoyer une.',
+      en: 'Pairing not confirmed on the screen of the thermostat: no more automatic requests (a read every hour sees a pairing confirmed late). Press "Test the connection" (or save the configuration) to send one again.',
+      fr: 'Appairage non confirmé sur l’écran du thermostat : plus de demande automatique (une lecture par heure voit un appairage confirmé tard). Appuyez sur « Tester la connexion » (ou enregistrez la configuration) pour en renvoyer une.',
     },
     httpError: (status, delay) =>
       join(
@@ -175,7 +180,10 @@ export const T = {
       'Hot water setpoint not offered on a thermostat set to Fahrenheit: unit not verified, nothing sent',
     dhwBounds:
       'The thermostat gives no usable hot water bounds (dhw_min_set, dhw_max_set): nothing sent',
-    tooMany: (n) => `Refused: at most ${n} commands of this kind per minute`,
+    tooMany: (n) =>
+      `Refused: at most ${n} raises (or mode changes) per minute; a lowering is never held back`,
+    previousBusy:
+      'The thermostat has not answered the previous command yet: nothing sent, try again in a few seconds',
     dataUnreadable: 'The data of the integration (/data) cannot be read: nothing sent',
     setpointDisabled:
       'Changing the room setpoint is disabled (tick "Allow changing the room setpoint")',

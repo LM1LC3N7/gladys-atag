@@ -441,17 +441,58 @@ test('the confirming read compares: a value not applied is logged and said in th
   assert.doesNotMatch(gladys.fake.connectionStatus.message.en, /last command/);
 });
 
-test('at most 6 updates of a kind per minute (a scene in a loop)', async () => {
+test('at most 6 raises (or mode changes) per minute; a lowering is never held back', async () => {
   const { gladys, fake, wait } = await boot({ config: ALL });
   for (let i = 0; i < 6; i += 1) {
-    assert.equal((await set(gladys, thermostat(), 'target', 10 + i)).success, true);
+    assert.equal((await set(gladys, thermostat(), 'target', 21 + i)).success, true);
     await wait(2 * SECOND);
   }
-  const refused = await set(gladys, thermostat(), 'target', 20);
-  assert.match(refused.error, /at most 6 commands of this kind per minute/);
+  const raise = await set(gladys, thermostat(), 'target', 27);
+  assert.match(raise.error, /at most 6 raises \(or mode changes\) per minute/);
   assert.equal(fake.updates.length, 6);
-  // Another kind is not held back.
-  assert.equal((await set(gladys, thermostat(), 'mode', 1)).success, true);
+  // Lowering, the way to heat less: written, again and again.
+  for (const value of [15, 10, 4]) {
+    assert.equal((await set(gladys, thermostat(), 'target', value)).success, true, String(value));
+    await wait(2 * SECOND);
+  }
+  assert.deepEqual(
+    fake.updates.slice(-3).map((u) => u.ch_mode_temp),
+    [15, 10, 4],
+  );
+  // The lowerings do not count: still 6 raises in the minute.
+  assert.match((await set(gladys, thermostat(), 'target', 20)).error, /at most 6 raises/);
   await wait(MINUTE);
   assert.equal((await set(gladys, thermostat(), 'target', 20)).success, true);
+});
+
+test('a command behind an update still waiting: answered within 4.3 s with the true cause; a lowering passes after', async () => {
+  const { gladys, fake, wait, clock } = await boot({ config: ALL });
+  let release;
+  fake.updateGate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const first = set(gladys, thermostat(), 'target', 27);
+  await settle();
+  await wait(COMMAND_ACK_MS);
+  assert.deepEqual(await first, { success: true }, 'sent, no answer yet');
+  await wait(200);
+  const arrived = clock.now;
+  let answeredAt;
+  const second = set(gladys, thermostat(), 'target', 18).then((r) => {
+    answeredAt = clock.now;
+    return r;
+  });
+  await settle();
+  await wait(3 * SECOND);
+  const result = await second;
+  assert.equal(result.success, false);
+  assert.match(result.error, /has not answered the previous request yet\): nothing sent/);
+  assert.ok(answeredAt - arrived <= 4300, `answered after ${answeredAt - arrived} ms`);
+  assert.equal(fake.updates.length, 1);
+  release();
+  await settle();
+  await wait(SECOND);
+  fake.updateGate = null;
+  assert.equal((await set(gladys, thermostat(), 'target', 18)).success, true);
+  assert.deepEqual(fake.updates.at(-1), { ch_mode_temp: 18 });
 });
