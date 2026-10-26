@@ -5,6 +5,10 @@
 // -----------------------------------------------------------------------------
 
 import { afterEach, test } from 'node:test';
+import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
+import { AtagApp } from '../src/app.js';
+import { registerHandlers } from '../src/handlers.js';
+import { memoryStore } from '../src/store.js';
 import assert from 'node:assert/strict';
 import { COMMAND_ACK_MS, CONFIRM_AFTER_MS } from '../src/constants.js';
 import {
@@ -17,7 +21,7 @@ import {
   state,
   thermostat,
 } from './helpers/app.js';
-import { OTHER_DEVICE_ID, createFakeThermostat } from './helpers/fakeThermostat.js';
+import { DEVICE_ID, OTHER_DEVICE_ID, createFakeThermostat } from './helpers/fakeThermostat.js';
 
 let running;
 afterEach(async () => {
@@ -106,10 +110,17 @@ test('room setpoint: values checked before rounding, half degrees, already set =
 test('control mode: Heating (1) and Auto (3) only; ch_control_mode 1 / 0', async () => {
   const { gladys, fake, wait } = await boot({ config: ALL });
   const t = thermostat();
-  for (const value of [0, 2, 4, '', null, 'heat']) {
+  for (const value of [0, 2, 4]) {
     const result = await set(gladys, t, 'mode', value);
     assert.equal(result.success, false, String(value));
-    assert.match(result.error, /Heating \(1\) and Auto \(3\) only/);
+    assert.match(
+      result.error,
+      /offers Heating \(1\) and Auto \(3\) only, no Off.*lower the room setpoint/,
+    );
+  }
+  for (const value of ['', null, 'heat', '0x1', [1]]) {
+    const result = await set(gladys, t, 'mode', value);
+    assert.match(result.error, /a number is expected/, String(value));
   }
   assert.equal((await set(gladys, t, 'mode', 1)).success, true);
   assert.deepEqual(fake.updates, [{ ch_control_mode: 1 }]);
@@ -152,7 +163,55 @@ test('hot water setpoint: a cap of 60 chosen by the user, never above; the therm
   assert.match(above.error, /from 30 to 60 °C/);
 });
 
-test('a thermostat in Fahrenheit gets the setpoint in Fahrenheit', async () => {
+test('hot water setpoint in Fahrenheit or without the bounds of the thermostat: refused, nothing written', async () => {
+  const cases = [
+    // temp_unit 1, bounds given in °F: refused (unit not verified).
+    [{ tempUnit: 1, dhwMinSet: 104, dhwMaxSet: 149, dhwTempSetp: 122 }, /set to Fahrenheit/],
+    // temp_unit 1, bounds missing.
+    [{ tempUnit: 1, dhwMinSet: null, dhwMaxSet: null }, /set to Fahrenheit/],
+    // temp_unit 1, hot water left in °C (Home Assistant's view), bounds missing.
+    [{ tempUnit: 1, dhwMinSet: null, dhwMaxSet: null, dhwTempSetp: 50 }, /set to Fahrenheit/],
+    // temp_unit 0, bounds missing: no fallback on the cap any more.
+    [{ dhwMinSet: null, dhwMaxSet: null }, /no usable hot water bounds/],
+    // temp_unit 0, bounds that are not °C values.
+    [{ dhwMinSet: 104, dhwMaxSet: 149 }, /no usable hot water bounds/],
+    [{ dhwMinSet: 60, dhwMaxSet: 40 }, /no usable hot water bounds/],
+  ];
+  for (const [report, pattern] of cases) {
+    const fake = createFakeThermostat(report);
+    const { gladys, app } = await boot({ config: { ...ALL, dhw_max: 60 }, fake });
+    const result = await set(gladys, boiler(), 'dhw_target', 60);
+    assert.equal(result.success, false, JSON.stringify(report));
+    assert.match(result.error, pattern);
+    assert.deepEqual(fake.updates, [], JSON.stringify(report));
+    await app.stop();
+  }
+  // temp_unit 0, bounds given: 60 written.
+  const fake = createFakeThermostat({ dhwMaxSet: 65 });
+  const { gladys } = await boot({ config: { ...ALL, dhw_max: 60 }, fake });
+  assert.equal((await set(gladys, boiler(), 'dhw_target', 60)).success, true);
+  assert.deepEqual(fake.updates, [{ dhw_temp_setp: 60 }]);
+});
+
+test('the last guard of the client: nothing above 60 for the hot water, known keys, finite numbers', async () => {
+  const fake = createFakeThermostat();
+  const { app } = await boot({ fake });
+  for (const control of [
+    { dhw_temp_setp: 61 },
+    { dhw_temp_setp: 140 },
+    { dhw_temp_setp: NaN },
+    { x: 1 },
+    {},
+  ]) {
+    await assert.rejects(
+      app.client.update(control),
+      (err) => err.code === 'refused' && err.notSent,
+    );
+  }
+  assert.deepEqual(fake.updates, []);
+});
+
+test('a thermostat in Fahrenheit gets the room setpoint in Fahrenheit', async () => {
   const fake = createFakeThermostat({ tempUnit: 1, chModeTemp: 68, dhwTempSetp: 122 });
   const { gladys } = await boot({ config: ALL, fake });
   assert.equal((await set(gladys, thermostat(), 'target', 20)).success, true, 'already 68 °F');
@@ -189,6 +248,10 @@ test('a slow thermostat: Gladys is answered at 4.3 s, "sent, not answered yet", 
   await wait(COMMAND_ACK_MS);
   assert.deepEqual(await promise, { success: true });
   assert.ok(logs.some((l) => /sent, the thermostat has not answered yet/.test(l)));
+  // The update was given the usual 10 s, only its sending bound to 3.5 s.
+  const update = fake.requests.find((r) => r.path === '/update');
+  assert.equal(update.timeout, 10_000);
+  assert.ok(update.sendWithin <= 3500);
   release();
   await settle();
   await wait(CONFIRM_AFTER_MS);
@@ -201,7 +264,7 @@ test('another thermostat answering, or the pairing lost: nothing sent', async ()
   const other = await set(gladys, thermostat(), 'target', 22);
   assert.equal(other.success, false);
   assert.match(other.error, /Another thermostat answers/);
-  fake.deviceId = (await import('./helpers/fakeThermostat.js')).DEVICE_ID;
+  fake.deviceId = DEVICE_ID;
   fake.pending = true;
   const lost = await set(gladys, thermostat(), 'target', 22);
   assert.equal(lost.success, false);
@@ -252,4 +315,143 @@ test('an unknown feature is refused', async () => {
   assert.match(result.error, /Unknown device or feature/);
   const sensor = await set(gladys, thermostat(), 'temperature', 1);
   assert.match(sensor.error, /Unknown device or feature/);
+});
+
+test('an update without an answer for 10 s: Gladys answered "sent" at 4.3 s, logged, read again', async () => {
+  const { gladys, fake, wait, logs } = await boot({ config: ALL });
+  fake.updateGate = new Promise(() => {}); // never answers
+  const promise = set(gladys, thermostat(), 'target', 22);
+  await settle();
+  await wait(COMMAND_ACK_MS);
+  assert.deepEqual(await promise, { success: true });
+  const reads = fake.requests.filter((r) => r.path === '/retrieve').length;
+  await wait(10 * SECOND);
+  assert.ok(logs.some((l) => /not confirmed: timeout/.test(l)));
+  await wait(CONFIRM_AFTER_MS);
+  assert.equal(fake.requests.filter((r) => r.path === '/retrieve').length, reads + 1);
+  // Never answered, never applied here: the read tells it.
+  assert.match(gladys.fake.connectionStatus.message.en, /last command is not seen/);
+});
+
+test('an update sent then cut without an answer: "sent, no answer", never "refused"; logged', async () => {
+  const { gladys, fake, app, logs, wait } = await boot({ config: ALL });
+  app.request = async (url, options) => {
+    if (url.endsWith('/update')) {
+      options.onSent?.();
+      fake.updates.push(JSON.parse(options.body).update_message.control);
+      throw Object.assign(new Error('Connection closed'), { code: 'reset' });
+    }
+    return fake.request(url, options);
+  };
+  app.client.request = app.request;
+  const result = await set(gladys, thermostat(), 'target', 22);
+  assert.equal(result.success, false);
+  assert.match(
+    result.error,
+    /^Sent, no answer from the thermostat \(connection closed by the thermostat\): the read 5 s later tells/,
+  );
+  assert.ok(logs.some((l) => /Command setpoint failed: reset/.test(l)));
+  await wait(CONFIRM_AFTER_MS);
+  assert.equal(fake.updates.length, 1, 'never sent twice');
+});
+
+test('a 3.6 s update on a real loopback server: Gladys gets success, the value is applied', async () => {
+  const fake = createFakeThermostat();
+  fake.updateGate = null;
+  const server = await fake.listen();
+  const gladys = createFakeGladys({
+    selector: 'atag',
+    config: { host: `127.0.0.1:${server.port}`, allow_setpoint: true },
+    devices: [thermostat()],
+  });
+  const quiet = () => {};
+  const app = new AtagApp({
+    gladys,
+    logger: { info: quiet, warn: quiet, error: quiet, debug: quiet },
+    store: memoryStore(),
+  });
+  registerHandlers(gladys, app, undefined);
+  try {
+    await gladys.connect();
+    while (!app.online) await new Promise((resolve) => setTimeout(resolve, 10));
+    // The thermostat takes 3.6 s to answer the update
+    // (Gladys answered before 4.3 s): the old cut at 3.5 s after the command killed it.
+    fake.updateGate = new Promise((resolve) => setTimeout(resolve, 3600));
+    const started = performance.now();
+    const result = await set(gladys, thermostat(), 'target', 22);
+    assert.deepEqual(result, { success: true });
+    assert.ok(performance.now() - started < 4500);
+    assert.equal(fake.report.chModeTemp, 22);
+  } finally {
+    await app.stop();
+    await server.close();
+  }
+});
+
+test('a command right after a saved configuration or a restart is accepted on its fresh read', async () => {
+  const { gladys, fake, app } = await boot();
+  // The user ticks the option and saves: no read is due for 60 s.
+  await gladys.fake.configUpdated({ host: '192.168.1.20', allow_setpoint: true });
+  const result = await set(gladys, thermostat(), 'target', 21);
+  assert.deepEqual(result, { success: true });
+  assert.deepEqual(fake.updates, [{ ch_mode_temp: 21 }]);
+  await app.stop();
+  // A restart (a new app, the same /data): the pairing state unknown, the
+  // command reads and proceeds.
+  const store = memoryStore({
+    mac: '02-11-22-33-44-55',
+    lastAttemptAt: Date.now(),
+    pair: { failures: 0, nextAt: 0 },
+  });
+  const world = await boot({ config: ALL, store, fake });
+  assert.equal(world.app.authorized, null);
+  assert.deepEqual(await set(world.gladys, thermostat(), 'target', 23), { success: true });
+  // Not paired after all: the fresh read says it, with the true reason.
+  fake.pending = true;
+  const refused = await set(world.gladys, thermostat(), 'target', 24);
+  assert.match(refused.error, /State not read \(pairing not confirmed\)/);
+});
+
+test('command values: a number or a plain decimal string only', async () => {
+  const { gladys, fake } = await boot({ config: ALL });
+  for (const value of ['0x14', '0b10101', [21], '2e1', '\t23\n', ' 21', '21.', '+21']) {
+    const result = await set(gladys, thermostat(), 'target', value);
+    assert.equal(result.success, false, JSON.stringify(value));
+  }
+  assert.equal(fake.updates.length, 0);
+  assert.equal((await set(gladys, thermostat(), 'target', '21.5')).success, true);
+  assert.deepEqual(fake.updates, [{ ch_mode_temp: 21.5 }]);
+});
+
+test('the confirming read compares: a value not applied is logged and said in the status', async () => {
+  const { gladys, fake, wait, logs, app } = await boot({ config: ALL });
+  app.client.request = async (url, options) => {
+    const answer = await fake.request(url, options);
+    if (url.endsWith('/update')) fake.report.chModeTemp = 20; // the thermostat ignores it
+    return answer;
+  };
+  assert.equal((await set(gladys, thermostat(), 'target', 22)).success, true);
+  await wait(CONFIRM_AFTER_MS);
+  assert.ok(logs.some((l) => /Command setpoint not seen at the confirming read/.test(l)));
+  assert.match(
+    gladys.fake.connectionStatus.message.en,
+    /last command is not seen on the thermostat/,
+  );
+  await wait(MINUTE);
+  assert.doesNotMatch(gladys.fake.connectionStatus.message.en, /last command/);
+});
+
+test('at most 6 updates of a kind per minute (a scene in a loop)', async () => {
+  const { gladys, fake, wait } = await boot({ config: ALL });
+  for (let i = 0; i < 6; i += 1) {
+    assert.equal((await set(gladys, thermostat(), 'target', 10 + i)).success, true);
+    await wait(2 * SECOND);
+  }
+  const refused = await set(gladys, thermostat(), 'target', 20);
+  assert.match(refused.error, /at most 6 commands of this kind per minute/);
+  assert.equal(fake.updates.length, 6);
+  // Another kind is not held back.
+  assert.equal((await set(gladys, thermostat(), 'mode', 1)).success, true);
+  await wait(MINUTE);
+  assert.equal((await set(gladys, thermostat(), 'target', 20)).success, true);
 });

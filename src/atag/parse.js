@@ -84,6 +84,12 @@ export const WEATHER = Object.freeze({
 /**
  * The report of a `retrieve_reply` -> a plain object, or null when it is not
  * one. Temperatures in °C, pressure in bar, flame in %, hours as given.
+ *
+ * The hot water fields (`dhw_*`) are kept as the thermostat gives them,
+ * never converted: Home Assistant treats them as °C whatever `temp_unit`
+ * says, pyatag follows `temp_unit`; nobody checked on a real thermostat. On a
+ * thermostat in Fahrenheit (`fahrenheit: true`) they are neither published
+ * nor commanded (TODO.md).
  */
 export function parseReport(reply) {
   const report = own(reply, 'report');
@@ -98,6 +104,7 @@ export function parseReport(reply) {
     const raw = finite(value);
     return fahrenheit ? toCelsius(raw) : round(raw, 2);
   };
+  const asGiven = (value) => round(finite(value), 2);
   const boilerStatus = integer(own(report, 'boiler_status'));
   const bit = (mask) => (boilerStatus === null ? null : (boilerStatus & mask) === mask ? 1 : 0);
   const chMode = integer(own(control, 'ch_mode'));
@@ -115,7 +122,7 @@ export function parseReport(reply) {
     outsideAverage: temperature(own(report, 'tout_avg')),
     chWaterTemperature: temperature(own(report, 'ch_water_temp')),
     chReturnTemperature: temperature(own(report, 'ch_return_temp')),
-    dhwWaterTemperature: temperature(own(report, 'dhw_water_temp')),
+    dhwWaterTemperature: asGiven(own(report, 'dhw_water_temp')),
     pressure: round(finite(own(report, 'ch_water_pres')), 2),
     burningHours: finite(own(report, 'burning_hours')),
     burner: bit(BOILER_BITS.BURNER),
@@ -126,11 +133,11 @@ export function parseReport(reply) {
     chMode: CH_MODES[chMode] ?? null,
     chModeDuration: integer(own(control, 'ch_mode_duration')),
     targetTemperature: temperature(own(control, 'ch_mode_temp')),
-    dhwTarget: temperature(own(control, 'dhw_temp_setp')),
+    dhwTarget: asGiven(own(control, 'dhw_temp_setp')),
     dhwMode: DHW_MODES[dhwMode] ?? null,
     weather: WEATHER[weather] ?? null,
-    dhwMin: temperature(own(configuration, 'dhw_min_set')),
-    dhwMax: temperature(own(configuration, 'dhw_max_set')),
+    dhwMin: asGiven(own(configuration, 'dhw_min_set')),
+    dhwMax: asGiven(own(configuration, 'dhw_max_set')),
     firmware: (() => {
       const url = own(configuration, 'download_url');
       if (typeof url !== 'string') return null;

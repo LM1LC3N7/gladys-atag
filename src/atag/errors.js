@@ -14,6 +14,7 @@ export const CODES = Object.freeze({
   UNAUTHORIZED: 'unauthorized', // the pairing is not confirmed on the screen of the thermostat
   CLOSED: 'closed', // the client was replaced (new configuration)
   NO_TIME: 'no_time', // the deadline of a command left no room: not sent
+  REFUSED: 'refused', // the last guard refused the values: not sent
 });
 
 export class ThermostatError extends Error {

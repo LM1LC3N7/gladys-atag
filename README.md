@@ -26,27 +26,36 @@ Gladys ⇄ SDK ⇄ src/app.js (AtagApp)
                  └─ src/devices.js       thermostat and boiler devices (pure)
 ```
 
-- **Thermostat**: `POST /pair` once per client (the user confirms "Gladys" on
-  the screen of the thermostat), then `POST /retrieve` every 60 s; the
-  client identity (`mac_address`) is drawn once and kept in `/data`.
+- **Thermostat**: `POST /retrieve` every 60 s; `POST /pair` only when the
+  thermostat says this client is not accepted (the user confirms "Gladys" on
+  its screen), 8 automatic requests at most, then only a user action sends
+  one. The client identity (`mac_address`) is drawn once and kept in `/data`;
+  a `/data` that cannot be read is never rewritten and nothing is sent.
   External ids: `thermostat:<device_id>`, `boiler:<device_id>`.
-- **Pace**: never two reads less than 60 s apart, whatever asks (test button,
-  Discovery, reconnection, restart: the time of the last read is kept in
-  `/data`), on a monotonic clock. The pairing not confirmed is asked again
-  1 to 15 min later; the thermostat unreachable retried 1 to 10 min later.
-- **Freshness**: a report whose `report_time` stops moving for 2 h is not
-  published (badge degraded). Another `device_id` at the address: the created
+- **Pace**: the loop, the test button, Discovery, a reconnection and a
+  restart never read sooner than 60 s after the last read (its time kept in
+  `/data` at every read), on a monotonic clock; a command adds its fresh read
+  and its confirming read. The pairing not confirmed is asked again 1 to
+  15 min later; the thermostat unreachable retried 1 to 10 min later.
+- **Freshness**: a report read more than 2 min ago is not published again; a
+  report whose `report_time` stops moving for 2 h is not published (badge
+  degraded, kept across a restart); a value outside the bounds of its feature
+  is not published. Another `device_id` at the address: the created
   devices turn unreachable, the new one goes to Discovery.
 - **Commands** (`allow_setpoint`, `allow_mode`, `allow_dhw_setpoint`, all off
   by default): the room setpoint 4 to 27 °C, the control mode Heating / Auto
-  (no "off": the thermostat has none), the hot water setpoint between the
-  thermostat's bounds and under the user's cap (55 °C by default, 60 °C at
-  most); refused outside, never clamped. The thermostat is read again just
-  before acting; nothing is sent past 3.5 s after the command; Gladys is
-  answered at most 4.3 s after it; the read 5 s later is the only
-  confirmation. Commands run one after the other. No feature is a switch.
-- **Reconnection to Gladys**: everything (Discovery, states, badges, status)
-  is published again; the client, the pairing state and the pace stay.
+  (the local interface offers no "off"), the hot water setpoint between the
+  thermostat's bounds (required) and under the user's cap (55 °C by default,
+  60 °C at most), not on a thermostat in Fahrenheit; refused outside, not
+  clamped. The thermostat is read again just before acting; nothing leaves
+  past 3.5 s after the command, the exchange then gets 10 s; Gladys is
+  answered 4.3 s after the command at the latest; the read 5 s later is the
+  only confirmation. Commands run one after the other, 6 per kind and per
+  minute at most. No feature is a switch.
+- **Reconnection to Gladys**: Discovery, badges, status and the fresh states
+  are published again; the client, the pairing state and the pace stay. The
+  configuration Gladys does not give is asked again without end (10 min at
+  most between two tries).
 
 ## Development
 

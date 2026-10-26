@@ -150,3 +150,41 @@ test('statesOf: only the devices of the report, nothing for unknown values', () 
     if ('state' in s) assert.ok(Number.isFinite(s.state), s.device_feature_external_id);
   }
 });
+
+test('statesOf: a number outside the bounds of its feature is never published as a measure', () => {
+  const report = parseReport(
+    replyOf(
+      retrieveReply({
+        roomTemp: 1e300,
+        chModeTemp: 500,
+        dhwTempSetp: 65,
+        chWaterPres: -5,
+        burningHours: 1e15,
+        outsideTemp: -327.68,
+      }),
+      'retrieve',
+    ),
+  );
+  const created = createdDevices(gladys, [
+    buildThermostatDevice(gladys, DEVICE_ID, 'fr'),
+    buildBoilerDevice(gladys, DEVICE_ID, 'fr'),
+  ]);
+  const keys = statesOf(gladys, created, report, 'en').map((s) =>
+    s.device_feature_external_id.split(':').at(-1),
+  );
+  for (const key of ['temperature', 'target', 'pressure', 'burning_hours', 'outside_temp']) {
+    assert.ok(!keys.includes(key), key);
+  }
+  assert.ok(keys.includes('dhw_target'), 'a hot water setpoint of 65 read is shown');
+});
+
+test('statesOf: the hot water temperatures of a thermostat in Fahrenheit are not published', () => {
+  const report = parseReport(replyOf(retrieveReply({ tempUnit: 1 }), 'retrieve'));
+  const created = createdDevices(gladys, [buildBoilerDevice(gladys, DEVICE_ID, 'fr')]);
+  const keys = statesOf(gladys, created, report, 'en').map((s) =>
+    s.device_feature_external_id.split(':').at(-1),
+  );
+  assert.ok(!keys.includes('dhw_target'));
+  assert.ok(!keys.includes('dhw_water_temp'));
+  assert.ok(keys.includes('pressure'));
+});

@@ -207,16 +207,40 @@ export function createdDevices(gladys, devices = gladys.devices) {
 const bit = (value) => (value === null ? null : value ? 1 : 0);
 
 /**
+ * What a reading may be to be published: the `min`/`max` of its feature,
+ * except the hot water setpoint, whose feature stops at the command cap
+ * (60 °C) while a thermostat may report up to its own maximum.
+ */
+const READING_BOUNDS = Object.freeze({ [BF.DHW_TARGET]: [0, 100] });
+
+/**
  * The states of the created devices for a report of `deviceId`
  * (`[{ device_feature_external_id, state | text }]`). Unknown values give
- * nothing. The Gladys mode is 1 (heating) for `ch_control_mode` 1, 3 (auto)
- * for 0.
+ * nothing, and so does a number outside the bounds of its feature (a
+ * sentinel, a hostile answer: never published as a measure). The hot water
+ * temperatures of a thermostat in Fahrenheit are not published (their unit
+ * is not verified, see parse.js). The Gladys mode is 1 (heating) for
+ * `ch_control_mode` 1, 3 (auto) for 0.
  */
 export function statesOf(gladys, created, report, language) {
   const t = texts(language);
   const states = [];
+  const bounds = new Map();
+  for (const device of [
+    buildThermostatDevice(gladys, report.deviceId, language),
+    buildBoilerDevice(gladys, report.deviceId, language),
+  ]) {
+    for (const f of device.features) {
+      const key = f.external_id.split(':').at(-1);
+      bounds.set(f.external_id, READING_BOUNDS[key] ?? [f.min, f.max]);
+    }
+  }
   const add = (id, value) => {
     if (value === null || value === undefined) return;
+    if (typeof value === 'number') {
+      const [min, max] = bounds.get(id) ?? [-Infinity, Infinity];
+      if (!(value >= min && value <= max)) return;
+    }
     states.push(
       typeof value === 'string'
         ? { device_feature_external_id: id, text: value }
@@ -242,8 +266,10 @@ export function statesOf(gladys, created, report, language) {
       add(ids.feature(BF.PRESSURE), report.pressure);
       add(ids.feature(BF.BURNER), bit(report.burner));
       add(ids.feature(BF.FLAME), report.flame);
-      add(ids.feature(BF.DHW_TEMPERATURE), report.dhwWaterTemperature);
-      add(ids.feature(BF.DHW_TARGET), report.dhwTarget);
+      if (!report.fahrenheit) {
+        add(ids.feature(BF.DHW_TEMPERATURE), report.dhwWaterTemperature);
+        add(ids.feature(BF.DHW_TARGET), report.dhwTarget);
+      }
       add(ids.feature(BF.DHW_HEATING), bit(report.dhwHeating));
       add(ids.feature(BF.DHW_MODE), report.dhwMode ? t.dhwModes[report.dhwMode] : null);
       add(

@@ -66,7 +66,6 @@ test('real clock: reads at 0, the interval and twice the interval; timers bounde
   }
   const at = reads.map((t) => Math.round(t - started));
   assert.equal(reads.length, 3, `reads at ${at}`);
-  // The first read follows the pairing request, one second (sped up) later.
   assert.ok(reads[0] - started < INTERVAL / 2, `the first read at once: ${at}`);
   for (let i = 1; i < reads.length; i += 1) {
     const gap = reads[i] - reads[i - 1];
@@ -75,5 +74,5 @@ test('real clock: reads at 0, the interval and twice the interval; timers bounde
   }
   assert.ok(timersSet <= 10, `${timersSet} timers`);
   assert.equal(gladys.fake.connectionStatus.connected, true);
-  assert.equal(fake.requests.filter((r) => r.path === '/pair').length, 1);
+  assert.equal(fake.requests.filter((r) => r.path === '/pair').length, 0, 'already paired');
 });

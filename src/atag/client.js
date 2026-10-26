@@ -10,7 +10,7 @@
 // have been applied, it is never sent twice). Plain HTTP: no TLS on this port.
 // -----------------------------------------------------------------------------
 
-import { MAX_BYTES, TIMEOUTS } from '../constants.js';
+import { CONTROL_KEYS, DHW_SETPOINT, MAX_BYTES, TIMEOUTS } from '../constants.js';
 import { CODES, ThermostatError } from './errors.js';
 import { httpPost } from './http.js';
 import { isAuthorized, parseJson, parseReport, replyOf } from './parse.js';
@@ -76,15 +76,22 @@ export class ThermostatClient {
     return Math.min(TIMEOUTS.REQUEST, remaining);
   }
 
-  /** One POST, after the spacing; resolves the `<path>_reply`, rejects a ThermostatError. */
-  async post(path, message, { deadline, onSent } = {}) {
+  /**
+   * One POST, after the spacing; resolves the `<path>_reply`, rejects a
+   * ThermostatError. `deadline`: the whole exchange ends by then (a read of a
+   * command). `sendDeadline`: the request must LEAVE by then, its answer may
+   * come later, within the usual timeout (an update: never sent late, never
+   * cut before the thermostat could answer).
+   */
+  async post(path, message, { deadline, sendDeadline, onSent } = {}) {
     if (this.closed) throw notSent(new ThermostatError(CODES.CLOSED, 'Client closed'));
+    const limit = sendDeadline ?? deadline;
     const mono = this.monotonic();
     if (this.lastCallAt !== undefined) {
       const wait = this.lastCallAt + TIMEOUTS.SPACING - mono;
       if (wait > 0) {
         // The wait counts in the budget: a command never leaves late.
-        if (deadline !== undefined && deadline - mono - wait < MIN_SEND_MS) {
+        if (limit !== undefined && limit - mono - wait < MIN_SEND_MS) {
           throw notSent(new ThermostatError(CODES.NO_TIME, 'No time left: request not sent'));
         }
         await this.sleep(wait);
@@ -93,12 +100,19 @@ export class ThermostatClient {
     if (this.closed) throw notSent(new ThermostatError(CODES.CLOSED, 'Client closed'));
     const now = this.monotonic();
     const timeout = this.budget(deadline, now);
+    let sendWithin;
+    if (limit !== undefined) {
+      sendWithin = limit - now;
+      if (sendWithin < MIN_SEND_MS) {
+        throw notSent(new ThermostatError(CODES.NO_TIME, 'No time left: request not sent'));
+      }
+    }
     this.lastCallAt = now;
     const response = await this.request(`${this.origin}/${path}`, {
       body: JSON.stringify(message),
       headers: { 'user-agent': USER_AGENT },
       timeout,
-      sendWithin: deadline === undefined ? undefined : deadline - now,
+      sendWithin,
       maxBytes: MAX_BYTES,
       onSent,
     });
@@ -165,14 +179,27 @@ export class ThermostatClient {
   }
 
   /**
-   * Set control items (`ch_mode_temp`, `ch_control_mode`, `dhw_temp_setp`...):
-   * sent once, never tried again (it may have been applied). The deadline
-   * bounds the moment it is SENT. Resolves the device id the thermostat answers.
+   * Set control items (`ch_mode_temp`, `ch_control_mode`, `dhw_temp_setp`):
+   * sent once, never tried again (it may have been applied). `deadline`
+   * bounds the moment it is SENT; the answer gets the usual timeout. The last
+   * guard before the wire: known keys only, finite numbers, the hot water
+   * setpoint never above 60.
    */
   update(control, { deadline, onSent } = {}) {
+    const keys = Object.keys(control ?? {});
+    const bad =
+      keys.length === 0 ||
+      keys.some((key) => !CONTROL_KEYS.includes(key) || !Number.isFinite(control[key])) ||
+      ('dhw_temp_setp' in control &&
+        !(control.dhw_temp_setp > 0 && control.dhw_temp_setp <= DHW_SETPOINT.HARD_MAX));
+    if (bad) {
+      return Promise.reject(
+        notSent(new ThermostatError(CODES.REFUSED, 'Update refused: not sent')),
+      );
+    }
     const message = {
       update_message: { seqnr: 0, account_auth: this.auth(), control, configuration: {} },
     };
-    return this.serial(() => this.post('update', message, { deadline, onSent }));
+    return this.serial(() => this.post('update', message, { sendDeadline: deadline, onSent }));
   }
 }

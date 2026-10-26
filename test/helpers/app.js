@@ -53,6 +53,7 @@ export async function setup({
     devices: created,
   });
   const { clock, timers, advance, pending } = createFakeClock(now);
+  fake.timers = timers;
   let drift = 0;
   const logs = [];
   const logger = Object.fromEntries(

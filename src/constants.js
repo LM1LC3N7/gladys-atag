@@ -98,15 +98,32 @@ export const INTERVALS = Object.freeze({
   /** Pairing not confirmed on the screen: the request is sent again, more and more rarely. */
   PAIR_MIN_MS: 60_000,
   PAIR_MAX_MS: 15 * 60_000,
+  /** A report older than this (last successful read) is never published. */
+  FRESH_MS: 2 * 60_000,
+  /** The configuration of Gladys not read: asked again 30 s, 1 min, 2 min... 10 min at most. */
+  CONFIG_RETRY_MIN_MS: 30_000,
+  CONFIG_RETRY_MAX_MS: 10 * 60_000,
   /** A stable value is published again after this long (dated recently in Gladys). */
   HEARTBEAT_MS: 30 * 60_000,
   /** A report whose own time stopped moving this long is stale: not published. */
   STALE_MS: 2 * 3600_000,
-  /** The time of the last attempt is written to /data at most this often. */
-  SAVE_ATTEMPT_MS: 60_000,
 });
 
 export const LIMITS = Object.freeze({
   /** POST /state admits 300 states per minute per integration: we keep under. */
   STATES_PER_MINUTE: 250,
+  /** Pairing requests sent by the loop alone; then only a user action sends one. */
+  PAIR_REQUESTS: 8,
+  /** Updates sent per command kind within a sliding minute (a scene in a loop). */
+  WRITES_PER_MINUTE: 6,
 });
+
+/**
+ * The hot water bounds of the thermostat (`dhw_min_set`, `dhw_max_set`) are
+ * required for a hot water command, and must look like °C values: a maximum
+ * of 30 to 70, a minimum of 10 to 70 not above the maximum.
+ */
+export const DHW_BOUNDS = Object.freeze({ MAX_LOW: 30, MAX_HIGH: 70, MIN_LOW: 10 });
+
+/** The only control keys an update may carry. */
+export const CONTROL_KEYS = Object.freeze(['ch_mode_temp', 'ch_control_mode', 'dhw_temp_setp']);

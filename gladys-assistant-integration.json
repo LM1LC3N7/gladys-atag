@@ -18,8 +18,8 @@
       "type": "section",
       "label": { "en": "How it works", "fr": "Fonctionnement" },
       "description": {
-        "en": "Gladys reads your Atag One thermostat every minute on your local network (port 10000), without any cloud. The thermostat asks you once to confirm the pairing of \"Gladys\" on its screen. The thermostat becomes a Gladys device (Discovery tab): room temperature, setpoint, control mode, heating, program, outside temperature, weather; the boiler becomes another: flow and return temperatures, pressure, burner, modulation, hot water temperature and setpoint, hot water production and mode, running hours, status. Unofficial integration, not affiliated with Atag. Never tested on a real thermostat: see the documentation.",
-        "fr": "Gladys lit votre thermostat Atag One toutes les minutes sur votre réseau local (port 10000), sans cloud. Le thermostat vous demande une fois de confirmer l'appairage de « Gladys » sur son écran. Le thermostat devient un appareil Gladys (onglet Découverte) : température de la pièce, consigne, mode de régulation, chauffe, programme, température extérieure, météo ; la chaudière en devient un autre : températures de départ et de retour, pression, brûleur, modulation, température et consigne d'eau chaude, production et mode d'eau chaude, heures de fonctionnement, état. Intégration non officielle, sans lien avec Atag. Jamais testée sur un vrai thermostat : voir la documentation."
+        "en": "Gladys reads your Atag One thermostat every minute on your local network (port 10000), without any cloud. The thermostat asks you once to confirm the pairing of \"Gladys\" on its screen (asked again 8 times at most, then with the button below). The thermostat becomes a Gladys device (Discovery tab): room temperature, setpoint, control mode, heating, program, outside temperature, weather; the boiler becomes another: flow and return temperatures, pressure, burner, modulation, hot water temperature and setpoint, hot water production and mode, running hours, status. Unofficial integration, not affiliated with Atag. Never tested on a real thermostat: see the documentation.",
+        "fr": "Gladys lit votre thermostat Atag One toutes les minutes sur votre réseau local (port 10000), sans cloud. Le thermostat vous demande une fois de confirmer l'appairage de « Gladys » sur son écran (redemandé 8 fois au plus, puis par le bouton ci-dessous). Le thermostat devient un appareil Gladys (onglet Découverte) : température de la pièce, consigne, mode de régulation, chauffe, programme, température extérieure, météo ; la chaudière en devient un autre : températures de départ et de retour, pression, brûleur, modulation, température et consigne d'eau chaude, production et mode d'eau chaude, heures de fonctionnement, état. Intégration non officielle, sans lien avec Atag. Jamais testée sur un vrai thermostat : voir la documentation."
       }
     },
     {
@@ -38,8 +38,8 @@
       "type": "section",
       "label": { "en": "Commands", "fr": "Commandes" },
       "description": {
-        "en": "By default Gladys only reads. Each option below lets the dashboard, the scenes, the voice assistants (Siri / HomeKit...) and the Thermostat service of Gladys change one thing: the room setpoint (4 to 27 °C), the control mode (Heating or Auto: this thermostat has no \"off\"), the hot water setpoint (under the cap below). No feature is a switch: \"turn everything off\" cannot act on the boiler.",
-        "fr": "Par défaut Gladys ne fait que lire. Chaque option ci-dessous permet au tableau de bord, aux scènes, aux assistants vocaux (Siri / HomeKit…) et au service Thermostat de Gladys de changer une chose : la consigne de la pièce (4 à 27 °C), le mode de régulation (Chauffage ou Automatique : ce thermostat n'a pas d'« arrêt »), la consigne d'eau chaude (sous le plafond ci-dessous). Aucune fonctionnalité n'est un interrupteur : « éteins tout » ne peut pas agir sur la chaudière."
+        "en": "By default Gladys only reads. Each option below lets the dashboard, the scenes, the voice assistants (Siri / HomeKit...) and the Thermostat service of Gladys change one thing: the room setpoint (4 to 27 °C), the control mode (Heating or Auto: the local interface of the Atag One offers no \"off\"; to heat less, lower the setpoint), the hot water setpoint (under the cap below; not on a thermostat set to Fahrenheit). No feature is a switch: \"turn everything off\" cannot act on the boiler.",
+        "fr": "Par défaut Gladys ne fait que lire. Chaque option ci-dessous permet au tableau de bord, aux scènes, aux assistants vocaux (Siri / HomeKit…) et au service Thermostat de Gladys de changer une chose : la consigne de la pièce (4 à 27 °C), le mode de régulation (Chauffage ou Automatique : l'interface locale de l'Atag One ne propose pas d'« arrêt » ; pour moins chauffer, baissez la consigne), la consigne d'eau chaude (sous le plafond ci-dessous ; pas sur un thermostat réglé en Fahrenheit). Aucune fonctionnalité n'est un interrupteur : « éteins tout » ne peut pas agir sur la chaudière."
       }
     },
     {
@@ -104,8 +104,8 @@
       "key": "test_connection",
       "label": { "en": "Test the connection", "fr": "Tester la connexion" },
       "description": {
-        "en": "Asks the pairing again if needed and reads the thermostat (never more than once a minute), then reports.",
-        "fr": "Redemande l'appairage si besoin et lit le thermostat (jamais plus d'une fois par minute), puis rend compte."
+        "en": "Reads the configuration again, asks the pairing again if needed and reads the thermostat (at most once a minute for this button), then reports.",
+        "fr": "Relit la configuration, redemande l'appairage si besoin et lit le thermostat (au plus une fois par minute pour ce bouton), puis rend compte."
       },
       "timeout_seconds": 30
     }

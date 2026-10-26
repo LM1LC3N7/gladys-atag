@@ -55,12 +55,15 @@ scripts/cover.mjs                 generates cover.png (plain Node)
 Safety rules of this integration (TODO.md, "Decisions"): every command is
 behind its own option, off by default (room setpoint 4-27 °C, control mode
 Heating / Auto, hot water setpoint under a cap of 55 °C by default and 60 °C
-at most, plus the thermostat's own bounds; refused outside, never clamped);
-the thermostat is read again just before acting, nothing is sent past 3.5 s,
-an update is never sent twice, the read 5 s later is the only confirmation;
-never a `switch` feature; never a read sooner than 60 s after the last one
-(`dueAt(mono)` on the monotonic clock, one read of the clock per decision);
-logs carry codes, never the text of an answer nor the pairing identity.
+at most, the thermostat's own bounds required, never on a thermostat in
+Fahrenheit, and a last guard in the client on the value written); refused
+outside, not clamped; the thermostat is read again just before acting,
+nothing leaves past 3.5 s, an update is never sent twice, the read 5 s later
+is the only confirmation; no `switch` feature; the loop never reads sooner
+than 60 s after the last read (`dueAt(mono)` on the monotonic clock, one read
+of the clock per decision); 8 automatic pairing requests at most; a `/data`
+that cannot be read is never rewritten; logs carry codes, never the text of
+an answer nor the pairing identity.
 
 ## Rules
 

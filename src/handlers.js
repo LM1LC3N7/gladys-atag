@@ -5,9 +5,6 @@
 
 import { ACTIONS } from './constants.js';
 
-/** How many more times the configuration is asked for after a failed read. */
-export const CONFIG_RETRIES = 3;
-
 export function registerHandlers(gladys, app, logger) {
   // --- Discovery and device lifecycle ------------------------------------------
   gladys.onScanRequest(() => app.publishDiscovery());
@@ -28,29 +25,13 @@ export function registerHandlers(gladys, app, logger) {
     return app.start(config, { force: true });
   });
 
-  // --- Connection lifecycle: every connection publishes everything again; the
-  // same configuration keeps the client, the pairing state and the pace.
-  // The configuration that cannot be read is asked again, a bounded number of
-  // times (30 s, 60 s, 120 s), on the app's timers.
-  const startWithConfig = async (attempt = 0) => {
-    let config;
-    try {
-      config = await gladys.getConfig();
-    } catch (err) {
-      if (attempt >= CONFIG_RETRIES) {
-        logger?.error(`Configuration not read: ${err?.message ?? 'error'}`);
-        return;
-      }
-      logger?.warn(`Configuration not read, asked again: ${err?.message ?? 'error'}`);
-      app.timers.setTimeout(() => startWithConfig(attempt + 1), 30_000 * 2 ** attempt);
-      return;
-    }
-    try {
-      await app.start(config);
-    } catch (err) {
-      logger?.error('Start failed', err);
-    }
-  };
-  gladys.on('connected', () => startWithConfig());
+  // --- Connection lifecycle: every connection reads the configuration and
+  // publishes again what is fresh; the same configuration keeps the client,
+  // the pairing state and the pace. A configuration Gladys does not give is
+  // asked again without end (30 s, 1 min... 10 min at most), the status
+  // saying so; one chain at a time, cleared on disconnection.
+  gladys.on('connected', () =>
+    app.startFromGladys().catch((err) => logger?.error('Start failed', err)),
+  );
   gladys.on('disconnected', () => app.pause());
 }

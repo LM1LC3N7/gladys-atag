@@ -131,7 +131,7 @@ test('numbers must be numbers: a string, NaN or a missing field is unknown', () 
   assert.equal(r({ roomTemp: 20.554 }).roomTemperature, 20.55);
 });
 
-test('Fahrenheit: converted to Celsius, and back for a command', () => {
+test('Fahrenheit: converted to Celsius, and back for a command; hot water fields as given', () => {
   const r = parseReport(
     replyOf(
       retrieveReply({ tempUnit: 1, roomTemp: 68, chModeTemp: 69.8, dhwMaxSet: 149 }),
@@ -141,7 +141,7 @@ test('Fahrenheit: converted to Celsius, and back for a command', () => {
   assert.equal(r.fahrenheit, true);
   assert.equal(r.roomTemperature, 20);
   assert.equal(r.targetTemperature, 21);
-  assert.equal(r.dhwMax, 65);
+  assert.equal(r.dhwMax, 149, 'unit not verified: never converted');
   assert.equal(toCelsius(32), 0);
   assert.equal(toDeviceUnit(21, true), 69.8);
   assert.equal(toDeviceUnit(21, false), 21);

@@ -34,6 +34,11 @@ export function reasonOf(err) {
       return { en: 'pairing not confirmed', fr: 'appairage non confirmé' };
     case CODES.CLOSED:
       return { en: 'configuration changed', fr: 'configuration changée' };
+    case CODES.REFUSED:
+      return {
+        en: 'values refused by the last check',
+        fr: 'valeurs refusées par le dernier contrôle',
+      };
     default:
       return { en: 'error', fr: 'erreur' };
   }
@@ -57,7 +62,7 @@ const join = (...parts) => ({
 
 export const T = {
   status: {
-    ok: ({ deviceId, stale }) =>
+    ok: ({ deviceId, stale, unwritable, notApplied }) =>
       join(
         {
           en: `The thermostat ${deviceId} answers.`,
@@ -69,6 +74,38 @@ export const T = {
               fr: 'Son rapport ne bouge plus depuis plus de 2 heures : valeurs non publiées.',
             }
           : { en: '', fr: '' },
+        notApplied
+          ? {
+              en: 'The last command is not seen on the thermostat at the read that follows it.',
+              fr: 'La dernière commande n’apparaît pas sur le thermostat à la relecture qui la suit.',
+            }
+          : { en: '', fr: '' },
+        unwritable
+          ? {
+              en: 'The data of the integration (/data) cannot be written: a restart will ask for the pairing again.',
+              fr: 'Les données de l’intégration (/data) ne peuvent pas être écrites : un redémarrage redemandera l’appairage.',
+            }
+          : { en: '', fr: '' },
+      ),
+    dataUnreadable: {
+      en: 'The data of the integration (/data) cannot be read: the pairing identity is not rewritten and nothing is sent to the thermostat. Read again every minute.',
+      fr: 'Les données de l’intégration (/data) sont illisibles : l’identité d’appairage n’est pas réécrite et rien n’est envoyé au thermostat. Nouvelle lecture toutes les minutes.',
+    },
+    configNotRead: (delay) => ({
+      en: `The configuration of Gladys is not read yet. Asked again in ${minutes(delay)} min.`,
+      fr: `La configuration de Gladys n’est pas encore lue. Nouvel essai dans ${minutes(delay)} min.`,
+    }),
+    pairingStopped: {
+      en: 'Pairing not confirmed on the screen of the thermostat: no more automatic requests. Press "Test the connection" (or save the configuration) to send one again.',
+      fr: 'Appairage non confirmé sur l’écran du thermostat : plus de demande automatique. Appuyez sur « Tester la connexion » (ou enregistrez la configuration) pour en renvoyer une.',
+    },
+    httpError: (status, delay) =>
+      join(
+        {
+          en: `The thermostat answers with HTTP error ${status}.`,
+          fr: `Le thermostat répond par une erreur HTTP ${status}.`,
+        },
+        RETRY(delay),
       ),
     hostEmpty: {
       en: 'Enter the address of the thermostat.',
@@ -131,7 +168,15 @@ export const T = {
   errors: {
     unknownDevice: 'Unknown device or feature',
     invalidValue: (min, max) => `Value refused: a temperature from ${min} to ${max} °C is expected`,
-    invalidMode: 'Value refused: this thermostat offers Heating (1) and Auto (3) only',
+    invalidMode:
+      'Value refused: the local interface of the Atag One (pyatag, Home Assistant) offers Heating (1) and Auto (3) only, no Off; to heat less, lower the room setpoint (down to 4 °C)',
+    invalidNumber: 'Value refused: a number is expected',
+    dhwFahrenheit:
+      'Hot water setpoint not offered on a thermostat set to Fahrenheit: unit not verified, nothing sent',
+    dhwBounds:
+      'The thermostat gives no usable hot water bounds (dhw_min_set, dhw_max_set): nothing sent',
+    tooMany: (n) => `Refused: at most ${n} commands of this kind per minute`,
+    dataUnreadable: 'The data of the integration (/data) cannot be read: nothing sent',
     setpointDisabled:
       'Changing the room setpoint is disabled (tick "Allow changing the room setpoint")',
     modeDisabled: 'Changing the mode is disabled (tick "Allow changing the mode")',
@@ -145,6 +190,9 @@ export const T = {
     otherThermostat: 'Another thermostat answers at this address: nothing sent',
     notSent: (err) => `Not sent (${reasonOf(err).en})`,
     refused: (err) => `Sent, refused by the thermostat (${reasonOf(err).en})`,
+    noAnswer: (err) =>
+      `Sent, no answer from the thermostat (${reasonOf(err).en}): the read 5 s later tells whether it was applied`,
+    configNotRead: 'The configuration of Gladys could not be read: try again in a moment',
     testTooLong: 'The thermostat did not answer in time',
   },
 };

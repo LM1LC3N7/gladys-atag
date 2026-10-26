@@ -3,20 +3,22 @@
 //
 //   start(config)  (re)connects: the client built on the identity kept in
 //                  /data, the reading loop armed. The same configuration again
-//                  (Gladys reconnected) only publishes everything again; the
+//                  (Gladys reconnected) only publishes again what is fresh; the
 //                  client, the pairing state and the pace stay.
-//   reading loop   every 60 s: a pairing request while the thermostat has not
-//                  accepted this client (confirmed once on its screen), then
-//                  the report. The thermostat unreachable: the next try 1 to
-//                  10 min later (never faster than the reading); the pairing
-//                  not confirmed: asked again 1 to 15 min later.
+//   reading loop   every 60 s: the report; a pairing request only when the
+//                  thermostat says this client is not accepted (confirmed once
+//                  on its screen). The thermostat unreachable: the next try 1
+//                  to 10 min later (never faster than the reading); the
+//                  pairing not confirmed: asked again 1 to 15 min later, 8
+//                  requests at most, then only a user action sends one.
 //   setValue       the room setpoint, the control mode and the hot water
 //                  setpoint, each behind its own option, see "Commands".
 //
 // Two clocks: `now` (wall clock) dates what /data keeps; `monotonic` paces the
 // reads, the retries and the freshness, so that a wall clock set back or
 // forward never stops nor hurries them. One read of the clock per decision:
-// dueAt(mono) computes on the caller's instant. One timer at a time.
+// dueAt(mono) computes on the caller's instant. One timer at a time for the
+// loop, one for the read that confirms a command.
 // -----------------------------------------------------------------------------
 
 import { createLogger } from '@gladysassistant/integration-sdk';
@@ -33,9 +35,11 @@ import {
   COMMAND_MIN_SEND_MS,
   CONFIRM_AFTER_MS,
   DEVICE_ID_PATTERN,
+  DHW_BOUNDS,
   DHW_SETPOINT,
   GLADYS_MODE,
   INTERVALS,
+  LIMITS,
   ROOM_SETPOINT,
   THERMOSTAT_FEATURES as TF,
   THERMOSTAT_TYPE,
@@ -51,24 +55,27 @@ import {
 } from './devices.js';
 import { T } from './i18n.js';
 import { StatePublisher } from './publisher.js';
-import { fileStore, normalizeMemory, serializeMemory } from './store.js';
+import { fileStore, isMac, normalizeMemory, serializeMemory } from './store.js';
 
 /** The "Test the connection" button waits 30 s: answer before. */
 const TEST_BUDGET_MS = 25_000;
 /** Entries per publishTransports call (the SDK refuses more). */
 const TRANSPORTS_PER_CALL = 100;
+const MINUTE = 60_000;
 const defaultTimers = { setTimeout, clearTimeout };
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const near = (a, b, step) => a !== null && a !== undefined && Math.abs(a - b) < step / 2;
 const half = (value) => Math.round(value * 2) / 2;
+const DECIMAL = /^-?\d+(\.\d+)?$/;
 
-/** A command value: a finite number, never a boolean, null or an empty string. */
-function numberOf(value) {
-  if (typeof value === 'boolean' || value === null || value === undefined || value === '') {
-    return null;
-  }
-  const raw = Number(value);
-  return Number.isFinite(raw) ? raw : null;
+/**
+ * A command value: a finite number, or a plain decimal string ("21",
+ * "20.5"). Never a boolean, null, '', an array, hex, binary or exponent.
+ */
+export function numberOf(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && DECIMAL.test(value)) return Number(value);
+  return null;
 }
 
 export class AtagApp {
@@ -114,32 +121,41 @@ export class AtagApp {
     this.running = false;
     this.timer = undefined;
     this.confirmTimer = undefined;
+    this.configTimer = undefined;
     this.queue = Promise.resolve();
     /** One thermostat: the commands run one after the other. */
     this.commands = Promise.resolve();
-    this.activeCommands = 0;
     this.busy = undefined;
     this.lastStatus = null;
     /** What /data keeps (loaded once, kept across configurations). */
     this.memory = undefined;
-    this.lastSavedAt = undefined;
+    this.dataError = false;
+    this.dataWarned = false;
     this.saveWarned = false;
+    /** The pairing: null unknown (not read since the start), true accepted, false not. */
+    this.authorized = null;
     /** The pace: monotonic instants (undefined: none). */
     this.lastReadAt = undefined;
     this.nextTryAt = undefined;
     this.pairDueAt = undefined;
     this.retryDelay = INTERVALS.RETRY_MIN_MS;
+    /** Monotonic instants of the updates sent, per command kind (a minute kept). */
+    this.writes = new Map();
+    /** The command the next confirming read checks: { spec } | null. */
+    this.expected = null;
     this.reset();
   }
 
   reset() {
     this.online = false;
-    this.authorized = false;
     this.report = null;
+    /** Monotonic instant of the last report read (loop or command). */
+    this.reportAt = undefined;
     this.deviceId = null;
     this.lastReportTime = undefined;
     this.reportMono = undefined;
     this.stale = false;
+    this.notApplied = false;
     this.discoveredKey = null;
     this.transports = new Map();
   }
@@ -155,11 +171,45 @@ export class AtagApp {
 
   /**
    * (Re)start with a configuration. Calls are serialized. `force`: the user
-   * asked (button, saved configuration): the pairing is asked again at the
-   * next read and the retry delay starts over.
+   * asked (button, saved configuration): the pairing may be asked again and
+   * the retry delay starts over; never a read sooner than the interval.
    */
   start(rawConfig, { force = false } = {}) {
     return this.enqueue(() => this.run(rawConfig, { force }));
+  }
+
+  /**
+   * The configuration read from Gladys, then start. When Gladys does not give
+   * it, asked again 30 s, 1 min, 2 min... 10 min at most, without end, the
+   * status saying so. One chain at a time (cleared by halt()).
+   */
+  async startFromGladys(attempt = 0) {
+    this.clearConfigTimer();
+    let config;
+    try {
+      config = await this.gladys.getConfig();
+    } catch (err) {
+      const delay = clamp(
+        INTERVALS.CONFIG_RETRY_MIN_MS * 2 ** attempt,
+        INTERVALS.CONFIG_RETRY_MIN_MS,
+        INTERVALS.CONFIG_RETRY_MAX_MS,
+      );
+      this.logger.warn(`Configuration not read (${err?.message ?? 'error'}): asked again`);
+      await this.setStatus(false, T.status.configNotRead(delay));
+      this.configTimer = this.timers.setTimeout(() => {
+        this.configTimer = undefined;
+        return this.startFromGladys(attempt + 1).catch((e) => this.logger.error('Start failed', e));
+      }, delay);
+      return;
+    }
+    await this.start(config);
+  }
+
+  clearConfigTimer() {
+    if (this.configTimer !== undefined) {
+      this.timers.clearTimeout(this.configTimer);
+      this.configTimer = undefined;
+    }
   }
 
   async stop() {
@@ -168,7 +218,7 @@ export class AtagApp {
     this.halt();
     this.dropClient();
     // /data written at a clean stop: the time of the last read is exact.
-    if (this.memory && this.lastSavedAt !== this.memory.lastAttemptAt) await this.save();
+    if (this.memory) await this.save();
   }
 
   /** Gladys went away: the loop stops, everything else (client, pairing, pace) stays. */
@@ -179,13 +229,18 @@ export class AtagApp {
   /** Clear the timers; the runs still in flight will not schedule again. */
   halt() {
     this.epoch += 1;
-    if (this.timer !== undefined) {
-      this.timers.clearTimeout(this.timer);
-      this.timer = undefined;
-    }
+    this.clearLoopTimer();
+    this.clearConfigTimer();
     if (this.confirmTimer !== undefined) {
       this.timers.clearTimeout(this.confirmTimer);
       this.confirmTimer = undefined;
+    }
+  }
+
+  clearLoopTimer() {
+    if (this.timer !== undefined) {
+      this.timers.clearTimeout(this.timer);
+      this.timer = undefined;
     }
   }
 
@@ -194,38 +249,57 @@ export class AtagApp {
     this.client = null;
   }
 
+  /**
+   * /data read once. No file: a fresh identity, written at once. Any other
+   * failure: nothing is drawn nor written (the file may hold the paired
+   * identity), false is returned and the caller tries again later.
+   */
   async loadMemory() {
-    if (this.memory) return;
-    const raw = await this.store.load();
-    this.memory = normalizeMemory(raw, this.now(), this.random);
-    this.lastSavedAt = raw ? this.memory.lastAttemptAt : undefined;
+    if (this.memory) return true;
+    let raw;
+    try {
+      raw = await this.store.load();
+      if (raw !== null && !isMac(raw?.mac)) {
+        throw Object.assign(new Error('No identity in the state file'), { code: 'EINVAL' });
+      }
+    } catch (err) {
+      if (!this.dataWarned) {
+        this.logger.warn(
+          `/data not readable (${err?.code ?? 'error'}): the pairing identity is not rewritten`,
+        );
+      }
+      this.dataWarned = true;
+      this.dataError = true;
+      return false;
+    }
+    this.dataError = false;
+    this.dataWarned = false;
+    const now = this.now();
+    const mono = this.monotonic();
+    this.memory = normalizeMemory(raw, now, this.random);
+    if (raw === null) await this.save();
     // The last read before the restart, brought onto the monotonic clock.
     if (this.memory.lastAttemptAt > 0) {
-      const age = Math.max(0, this.now() - this.memory.lastAttemptAt);
-      if (age < INTERVALS.POLL_MS) this.lastReadAt = this.monotonic() - age;
+      const age = Math.max(0, now - this.memory.lastAttemptAt);
+      if (age < INTERVALS.POLL_MS) this.lastReadAt = mono - age;
     }
-    if (this.memory.pair.nextAt > 0) {
-      this.pairDueAt = this.monotonic() + (this.memory.pair.nextAt - this.now());
+    if (this.memory.pair.nextAt > 0) this.pairDueAt = mono + (this.memory.pair.nextAt - now);
+    // The freshness of the report goes on across the restart.
+    if (this.memory.report.time !== null) {
+      this.lastReportTime = this.memory.report.time;
+      this.reportMono = mono - Math.max(0, now - this.memory.report.changedAt);
     }
+    return true;
   }
 
   async save() {
     if (!this.memory) return;
     try {
       await this.store.save(serializeMemory(this.memory));
-      this.lastSavedAt = this.memory.lastAttemptAt;
       this.saveWarned = false;
     } catch (err) {
       if (!this.saveWarned) this.logger.warn(`/data not written: ${err?.code ?? err?.message}`);
       this.saveWarned = true;
-    }
-  }
-
-  /** The time of a read, kept BEFORE it; written at most once a minute. */
-  async saveAttempt(now) {
-    this.memory.lastAttemptAt = now;
-    if (this.lastSavedAt === undefined || now - this.lastSavedAt >= INTERVALS.SAVE_ATTEMPT_MS) {
-      await this.save();
     }
   }
 
@@ -240,6 +314,11 @@ export class AtagApp {
       await this.resume();
       return;
     }
+    // The pairing state is kept when the thermostat stays the same address
+    // (the identity of this client never changes within a run).
+    const sameThermostat =
+      config.thermostat !== null && config.thermostat.origin === this.config.thermostat?.origin;
+    if (!sameThermostat) this.authorized = null;
     this.halt();
     this.dropClient();
     this.generation += 1;
@@ -256,29 +335,46 @@ export class AtagApp {
       await this.setStatus(false, invalid);
       return;
     }
-    await this.loadMemory();
+    await this.connect({ force });
+  }
+
+  /** /data, then the client and the loop; /data unreadable: tried again every minute. */
+  async connect({ force }) {
+    if (!(await this.loadMemory())) {
+      await this.setStatus(false, T.status.dataUnreadable);
+      const epoch = this.epoch;
+      const generation = this.generation;
+      this.timer = this.timers.setTimeout(() => {
+        this.timer = undefined;
+        if (epoch !== this.epoch || generation !== this.generation || !this.running) return;
+        return this.enqueue(() => this.connect({ force })).catch((err) =>
+          this.logger.error('Start failed', err),
+        );
+      }, INTERVALS.POLL_MS);
+      return;
+    }
     if (force) await this.lift();
     this.client = new ThermostatClient({
-      origin: config.thermostat.origin,
+      origin: this.config.thermostat.origin,
       mac: this.memory.mac,
       request: this.request,
       monotonic: this.monotonic,
       ...(this.sleep ? { sleep: this.sleep } : {}),
     });
-    this.logger.info(`Using the thermostat at ${config.thermostat.origin}`);
+    this.logger.info(`Using the thermostat at ${this.config.thermostat.origin}`);
     this.schedule();
   }
 
   /**
-   * The user asked (button, saved configuration): the pairing is asked again
-   * at the next read, the retries start over. Never a read sooner than the
-   * interval though.
+   * The user asked (button, saved configuration): the pairing may be asked
+   * again (8 more automatic requests), the retries start over. Never a read
+   * sooner than the interval though.
    */
   async lift() {
     this.nextTryAt = undefined;
     this.pairDueAt = undefined;
     this.retryDelay = INTERVALS.RETRY_MIN_MS;
-    if (this.memory.pair.failures > 0 || this.memory.pair.nextAt > 0) {
+    if (this.memory && (this.memory.pair.failures > 0 || this.memory.pair.nextAt > 0)) {
       this.memory.pair = { failures: 0, nextAt: 0 };
       await this.save();
     }
@@ -301,11 +397,14 @@ export class AtagApp {
   }
 
   /**
-   * Gladys reconnected with the same configuration: everything is published
-   * again (Gladys may have lost it), the reading loop goes on where it was.
+   * Gladys reconnected with the same configuration, or the button: the
+   * status, Discovery, badges and the FRESH states are published again
+   * (Gladys may have lost them); an old report is not (the next read, due at
+   * once after a long absence, publishes). The loop goes on where it was; a
+   * confirming read already planned stays.
    */
   async resume() {
-    this.halt();
+    this.clearLoopTimer();
     const status = this.lastStatus ? JSON.parse(this.lastStatus) : null;
     this.lastStatus = null;
     this.transports.clear();
@@ -320,6 +419,15 @@ export class AtagApp {
 
   // --- Pace ------------------------------------------------------------------
 
+  /** The pairing requests of the loop are spent: only a user action sends one. */
+  pairingStopped() {
+    return (
+      this.authorized === false &&
+      this.memory !== undefined &&
+      this.memory.pair.failures >= LIMITS.PAIR_REQUESTS
+    );
+  }
+
   /** The monotonic time from which the next read may start, from the caller's instant `mono`. */
   dueAt(mono) {
     let due = this.lastReadAt === undefined ? mono : this.lastReadAt + INTERVALS.POLL_MS;
@@ -328,13 +436,10 @@ export class AtagApp {
     return due;
   }
 
-  /** One timer: the next read when it is due. */
+  /** One timer: the next read when it is due (none once the pairing requests are spent). */
   schedule() {
-    if (this.timer !== undefined) {
-      this.timers.clearTimeout(this.timer);
-      this.timer = undefined;
-    }
-    if (!this.running || !this.client) return;
+    this.clearLoopTimer();
+    if (!this.running || !this.client || this.pairingStopped()) return;
     const epoch = this.epoch;
     const mono = this.monotonic();
     const wait = Math.max(0, this.dueAt(mono) - mono);
@@ -359,7 +464,8 @@ export class AtagApp {
   }
 
   /**
-   * One round: the pairing request while not authorized, then the report.
+   * One round: the report first; a pairing request only when the thermostat
+   * says this client is not accepted (and the loop has requests left).
    * `confirm`: the read that follows a command, whatever the pace.
    */
   async read({ confirm }) {
@@ -367,48 +473,74 @@ export class AtagApp {
     if (!client || !this.running) return;
     const mono = this.monotonic();
     if (!confirm && mono < this.dueAt(mono)) return;
+    if (this.pairingStopped()) return;
     /** Another configuration (or a stop) during an await: this read gives up, silently. */
     const gone = () => client !== this.client || !this.running;
     this.lastReadAt = mono;
-    // Kept BEFORE the request: a restart during it never reads again sooner.
-    await this.saveAttempt(this.now());
+    // Kept BEFORE the request (every read): a restart never reads again sooner.
+    this.memory.lastAttemptAt = this.now();
+    await this.save();
     if (gone()) return;
     let report;
+    let pairSent = false;
+    const pair = async () => {
+      pairSent = true;
+      await client.pair();
+      if (gone()) return false;
+      this.authorized = true;
+      this.logger.info('The thermostat accepted the pairing');
+      return true;
+    };
     try {
-      if (!this.authorized) {
-        await client.pair();
-        if (gone()) return;
-        this.authorized = true;
-        this.logger.info('The thermostat accepted the pairing');
+      if (this.authorized === false) {
+        if (!(await pair())) return;
       }
-      report = await client.retrieve();
+      try {
+        report = await client.retrieve();
+      } catch (err) {
+        if (!isUnauthorized(err) || pairSent || gone()) throw err;
+        // The thermostat no longer (or not yet) accepts this client.
+        this.authorized = false;
+        if (this.memory.pair.failures >= LIMITS.PAIR_REQUESTS) throw err;
+        if (!(await pair())) return;
+        report = await client.retrieve();
+      }
     } catch (err) {
       if (gone()) return;
-      await this.failed(err, mono);
+      await this.failed(err, mono, { pairSent });
       return;
     }
     if (gone()) return;
-    await this.succeeded(report, mono);
+    await this.succeeded(report, mono, { confirm });
   }
 
   /** A reading failed: the pairing to confirm, or a retry with a growing delay. */
-  async failed(err, mono) {
+  async failed(err, mono, { pairSent = false } = {}) {
     const wasOnline = this.online;
     this.online = false;
     await this.publishTransports();
     if (isUnauthorized(err)) {
       this.authorized = false;
       const pair = this.memory.pair;
-      pair.failures = Math.min(pair.failures + 1, 1000);
+      if (pairSent) pair.failures = Math.min(pair.failures + 1, 1000);
+      if (pair.failures >= LIMITS.PAIR_REQUESTS) {
+        pair.nextAt = 0;
+        this.pairDueAt = undefined;
+        await this.save();
+        this.logger.warn('Pairing not confirmed: no more automatic requests');
+        this.clearLoopTimer();
+        await this.setStatus(false, T.status.pairingStopped);
+        return;
+      }
       const delay = clamp(
-        INTERVALS.PAIR_MIN_MS * 2 ** (pair.failures - 1),
+        INTERVALS.PAIR_MIN_MS * 2 ** (Math.max(pair.failures, 1) - 1),
         INTERVALS.PAIR_MIN_MS,
         INTERVALS.PAIR_MAX_MS,
       );
       pair.nextAt = this.now() + delay;
       this.pairDueAt = mono + delay;
       await this.save();
-      if (pair.failures === 1) this.logger.warn('Pairing not confirmed on the thermostat');
+      if (pair.failures <= 1) this.logger.warn('Pairing not confirmed on the thermostat');
       await this.setStatus(false, T.status.pairing(delay));
       return;
     }
@@ -428,11 +560,12 @@ export class AtagApp {
     if (err?.code === CODES.BAD_ANSWER || err?.code === CODES.TOO_LARGE || err?.status === 404) {
       return T.status.notThermostat(delay);
     }
+    if (err?.code === CODES.HTTP) return T.status.httpError(err.status, delay);
     return T.status.unreachable(err, delay);
   }
 
   /** A report arrived: identity, freshness, then everything published. */
-  async succeeded(report, mono) {
+  async succeeded(report, mono, { confirm = false } = {}) {
     if (!report.deviceId || !DEVICE_ID_PATTERN.test(report.deviceId)) {
       await this.failed(
         Object.assign(new Error('No device id in the report'), { code: CODES.BAD_ANSWER }),
@@ -449,24 +582,48 @@ export class AtagApp {
       await this.save();
     }
     // Freshness on the thermostat's own stamp: a report whose time stopped
-    // moving for 2 h is not published (a thermostat stuck on old values).
+    // moving for 2 h is not published (a thermostat stuck on old values). The
+    // stamp and the time it changed are kept in /data (written at the next
+    // read). Without a stamp, this check cannot apply.
     if (report.reportTime === null || report.reportTime !== this.lastReportTime) {
       this.lastReportTime = report.reportTime;
       this.reportMono = mono;
+      this.memory.report =
+        report.reportTime === null
+          ? { time: null, changedAt: 0 }
+          : { time: report.reportTime, changedAt: this.now() };
     }
     const stale = mono - this.reportMono > INTERVALS.STALE_MS;
     if (stale && !this.stale) this.logger.warn('The report of the thermostat does not move');
     this.stale = stale;
     this.report = report;
+    this.reportAt = mono;
     this.online = true;
     if (this.deviceId !== report.deviceId) {
       if (this.deviceId) this.logger.info(`Another thermostat answers: ${report.deviceId}`);
       this.deviceId = report.deviceId;
     }
+    if (confirm && this.expected) {
+      this.notApplied = !this.applied(this.expected.spec, report);
+      if (this.notApplied) {
+        this.logger.warn(`Command ${this.expected.spec.kind} not seen at the confirming read`);
+      }
+      this.expected = null;
+    } else if (!confirm) {
+      this.notApplied = false;
+    }
     if (this.discoveredKey !== this.deviceId) await this.publishDiscovered();
     await this.publishStates();
     await this.publishTransports();
-    await this.setStatus(true, T.status.ok({ deviceId: this.deviceId, stale }));
+    await this.setStatus(
+      true,
+      T.status.ok({
+        deviceId: this.deviceId,
+        stale,
+        unwritable: this.saveWarned,
+        notApplied: this.notApplied,
+      }),
+    );
   }
 
   async setStatus(connected, message) {
@@ -503,9 +660,14 @@ export class AtagApp {
     await this.publishDiscovered();
   }
 
-  /** The states of the created devices of the thermostat that answers. */
+  /**
+   * The states of the created devices of the thermostat that answers, from a
+   * report read less than 2 min ago only (never an old value published as
+   * new, after Gladys was away for instance).
+   */
   states() {
-    if (!this.report || !this.online || this.stale) return [];
+    if (!this.report || !this.online || this.stale || this.reportAt === undefined) return [];
+    if (this.monotonic() - this.reportAt > INTERVALS.FRESH_MS) return [];
     return statesOf(this.gladys, createdDevices(this.gladys), this.report, this.config.language);
   }
 
@@ -546,19 +708,20 @@ export class AtagApp {
   //
   // Three commands, each refused unless the user allowed it (off by default):
   // the room setpoint (`allow_setpoint`, 4 to 27 °C by half degrees), the
-  // control mode (`allow_mode`, Heating or Auto: this thermostat has no
-  // "off") and the hot water setpoint (`allow_dhw_setpoint`, between the
-  // thermostat's own bounds and under the user's cap, 60 °C at most). The
-  // permission is checked when the command arrives AND just before it is
-  // sent; a value outside the bounds is refused, never clamped. The commands
-  // run one after the other (one thermostat), use the client of the moment
-  // they arrived (a new configuration in between refuses them), and read the
-  // report just before acting: the pairing not confirmed, another thermostat
-  // answering, or a read that fails, and nothing is sent; the value already
-  // there, and nothing is sent either. Gladys waits 5 s: past 3.5 s after the
-  // command arrived, nothing is sent any more; once sent, Gladys gets its
-  // answer at most 4.3 s after the command, and the report is read again 5 s
-  // later: only that read confirms the value.
+  // control mode (`allow_mode`, Heating or Auto: the local interface offers
+  // no "off") and the hot water setpoint (`allow_dhw_setpoint`, between the
+  // thermostat's own bounds and under the user's cap, 60 °C at most; never on
+  // a thermostat in Fahrenheit). The permission is checked when the command
+  // arrives AND just before it is sent; a value outside the bounds is
+  // refused, never clamped. The commands run one after the other (one
+  // thermostat), 6 per kind and per minute at most, use the client of the
+  // moment they arrived (a new configuration in between refuses them), and
+  // read the report just before acting (the pairing state unknown since a
+  // start is settled by that read). Gladys waits 5 s: past 3.5 s after the
+  // command arrived, nothing is sent any more; once sent, the exchange gets
+  // the usual 10 s, Gladys gets its answer at most 4.3 s after the command,
+  // and the report is read again 5 s after the answer: only that read
+  // confirms the value.
 
   async setValue(device, feature, value) {
     const received = this.monotonic();
@@ -568,8 +731,10 @@ export class AtagApp {
     if (spec.error) throw new Error(spec.error);
     this.allowed(spec);
     const client = this.client;
-    if (!client) throw new Error(T.errors.notConnected);
-    if (!this.authorized) throw new Error(T.errors.pairing);
+    if (!client) {
+      throw new Error(this.dataError ? T.errors.dataUnreadable : T.errors.notConnected);
+    }
+    if (this.authorized === false) throw new Error(T.errors.pairing);
     const generation = this.generation;
     const run = this.commands.then(() => this.command(received, { client, generation, spec }));
     this.commands = run.catch(() => {});
@@ -590,7 +755,7 @@ export class AtagApp {
     if (parsed.kind === THERMOSTAT_TYPE && parsed.feature === TF.MODE) {
       const raw = numberOf(value);
       if (raw !== GLADYS_MODE.HEATING && raw !== GLADYS_MODE.AUTO) {
-        return { error: T.errors.invalidMode };
+        return { error: raw === null ? T.errors.invalidNumber : T.errors.invalidMode };
       }
       return { kind: 'mode', parsed, value: raw };
     }
@@ -620,7 +785,7 @@ export class AtagApp {
       throw new Error(T.errors.configChanged);
     }
     this.allowed(spec);
-    if (!this.authorized) throw new Error(T.errors.pairing);
+    if (this.authorized === false) throw new Error(T.errors.pairing);
   }
 
   /** A failure of the thermostat met by a command: the pairing lost applies to every path. */
@@ -628,13 +793,23 @@ export class AtagApp {
     if (isUnauthorized(err) && generation === this.generation) await this.failed(err, mono);
   }
 
+  /** At most LIMITS.WRITES_PER_MINUTE updates of a kind within a sliding minute. */
+  writesLeft(kind, mono) {
+    const recent = (this.writes.get(kind) ?? []).filter((at) => mono - at < MINUTE);
+    this.writes.set(kind, recent);
+    return LIMITS.WRITES_PER_MINUTE - recent.length;
+  }
+
   async command(received, { client, generation, spec }) {
-    this.activeCommands += 1;
+    const label = `Command ${spec.kind}`;
     try {
       this.stillValid({ client, generation, spec });
       const deadline = received + COMMAND_BUDGET_MS;
       const mono = this.monotonic();
       if (deadline - mono < COMMAND_MIN_READ_MS) throw new Error(T.errors.tooSlow);
+      if (this.writesLeft(spec.kind, mono) <= 0) {
+        throw new Error(T.errors.tooMany(LIMITS.WRITES_PER_MINUTE));
+      }
       let report;
       try {
         report = await client.retrieve({ deadline: deadline - COMMAND_MIN_SEND_MS });
@@ -642,6 +817,8 @@ export class AtagApp {
         await this.shared(err, generation, mono);
         throw new Error(T.errors.unknownState(err), { cause: err });
       }
+      // The fresh read settles an unknown pairing state.
+      if (generation === this.generation && client === this.client) this.authorized = true;
       // The fresh state is published without waiting: Gladys must get its
       // answer within 5 s.
       this.observed(report, generation);
@@ -652,15 +829,17 @@ export class AtagApp {
       // The last check before acting: the user may have changed things meanwhile.
       this.stillValid({ client, generation, spec });
       await this.send({ client, generation, spec, control, received, deadline });
-    } finally {
-      this.activeCommands -= 1;
+    } catch (err) {
+      // Codes only: never the text of an answer.
+      this.logger.warn(`${label} failed: ${err?.cause?.code ?? 'refused'}`);
+      throw err;
     }
   }
 
   /**
    * The `control` to send for a command against the fresh report, or null
-   * when the value is already there. The hot water bounds are the
-   * thermostat's own, under the user's cap.
+   * when the value is already there. The hot water command needs the bounds
+   * of the thermostat (in °C, plausible) and a thermostat in Celsius.
    */
   controlOf(spec, report) {
     if (spec.kind === 'setpoint') {
@@ -671,15 +850,34 @@ export class AtagApp {
       if (gladysModeOf(report.chControlMode) === spec.value) return null;
       return { ch_control_mode: chControlModeOf(spec.value) };
     }
-    const min = report.dhwMin ?? DHW_SETPOINT.FLOOR;
-    const max = Math.min(
-      report.dhwMax ?? DHW_SETPOINT.HARD_MAX,
-      this.config.dhwMax,
-      DHW_SETPOINT.HARD_MAX,
-    );
-    if (spec.value < min || spec.value > max) throw new Error(T.errors.invalidValue(min, max));
+    if (report.fahrenheit) throw new Error(T.errors.dhwFahrenheit);
+    const { dhwMin, dhwMax } = report;
+    if (
+      dhwMin === null ||
+      dhwMax === null ||
+      dhwMax < DHW_BOUNDS.MAX_LOW ||
+      dhwMax > DHW_BOUNDS.MAX_HIGH ||
+      dhwMin < DHW_BOUNDS.MIN_LOW ||
+      dhwMin > dhwMax
+    ) {
+      throw new Error(T.errors.dhwBounds);
+    }
+    const max = Math.min(dhwMax, this.config.dhwMax, DHW_SETPOINT.HARD_MAX);
+    if (spec.value < dhwMin || spec.value > max) {
+      throw new Error(T.errors.invalidValue(dhwMin, max));
+    }
     if (near(report.dhwTarget, spec.value, DHW_SETPOINT.STEP)) return null;
-    return { dhw_temp_setp: toDeviceUnit(spec.value, report.fahrenheit) };
+    // The value written is the one checked (°C, never converted).
+    return { dhw_temp_setp: spec.value };
+  }
+
+  /** The value a command asked is the one a report shows. */
+  applied(spec, report) {
+    if (spec.kind === 'setpoint') {
+      return near(report.targetTemperature, spec.value, ROOM_SETPOINT.STEP);
+    }
+    if (spec.kind === 'mode') return gladysModeOf(report.chControlMode) === spec.value;
+    return near(report.dhwTarget, spec.value, DHW_SETPOINT.STEP);
   }
 
   /** Send, then answer Gladys on the thermostat's answer or at COMMAND_ACK_MS, whichever first. */
@@ -689,6 +887,7 @@ export class AtagApp {
       deadline,
       onSent: () => {
         sent = true;
+        this.writes.get(spec.kind)?.push(this.monotonic());
       },
     });
     let handle;
@@ -709,22 +908,24 @@ export class AtagApp {
     const label = `Command ${spec.kind} (${Object.keys(control).join(',')})`;
     if (outcome.done) {
       this.logger.info(`${label} sent`);
-      this.scheduleConfirm(generation);
+      this.expect(spec, generation);
       return;
     }
     if (outcome.pending) {
-      // Sent, the thermostat still at work: Gladys is answered now, the read follows.
+      // Sent, the thermostat still at work: Gladys is answered now, the
+      // outcome is logged and the read follows it.
       this.logger.info(`${label} sent, the thermostat has not answered yet`);
       request.then(
         () => {
-          if (generation === this.generation) this.scheduleConfirm(generation);
+          this.logger.info(`${label} answered`);
+          if (generation === this.generation) this.expect(spec, generation);
         },
         async (err) => {
           this.logger.warn(`${label} not confirmed: ${err?.code ?? 'error'}`);
           if (generation !== this.generation) return;
           await this.shared(err, generation, this.monotonic());
           // It may have been applied: read again anyway.
-          this.scheduleConfirm(generation);
+          this.expect(spec, generation);
         },
       );
       return;
@@ -732,14 +933,18 @@ export class AtagApp {
     const { err } = outcome;
     await this.shared(err, generation, this.monotonic());
     if (err?.notSent || !sent) throw new Error(T.errors.notSent(err), { cause: err });
-    // Sent, refused or lost: it may have been applied, the next read tells.
-    this.scheduleConfirm(generation);
-    throw new Error(T.errors.refused(err), { cause: err });
+    // Sent: it may have been applied, the read 5 s later tells.
+    this.expect(spec, generation);
+    if (err?.code === CODES.HTTP || err?.code === CODES.UNAUTHORIZED) {
+      throw new Error(T.errors.refused(err), { cause: err });
+    }
+    throw new Error(T.errors.noAnswer(err), { cause: err });
   }
 
   /** The read that confirms a command, CONFIRM_AFTER_MS after its answer (one at a time). */
-  scheduleConfirm(generation) {
+  expect(spec, generation) {
     if (generation !== this.generation || !this.running) return;
+    this.expected = { spec };
     if (this.confirmTimer !== undefined) this.timers.clearTimeout(this.confirmTimer);
     const epoch = this.epoch;
     this.confirmTimer = this.timers.setTimeout(async () => {
@@ -760,6 +965,7 @@ export class AtagApp {
     if (generation !== this.generation || !this.online) return;
     if (report.deviceId !== this.deviceId) return;
     this.report = report;
+    this.reportAt = this.monotonic();
     void this.publishStates();
   }
 
@@ -792,9 +998,9 @@ export class AtagApp {
   }
 
   /**
-   * The pairing asked again and the retries started over (the user asked),
-   * a read now when the pace allows it (never sooner than the interval),
-   * then a report, within 25 s.
+   * The configuration read again from Gladys, the pairing asked again and the
+   * retries started over (the user asked), a read now when the pace allows
+   * it (never sooner than the interval), then a report, within 25 s.
    */
   async testConnection() {
     await this.within(this.test(), TEST_BUDGET_MS, T.errors.testTooLong);
@@ -811,7 +1017,13 @@ export class AtagApp {
   }
 
   async test() {
-    await this.start(this.rawConfig, { force: true });
+    let raw;
+    try {
+      raw = await this.gladys.getConfig();
+    } catch (err) {
+      throw new Error(T.errors.configNotRead, { cause: err });
+    }
+    await this.start(raw, { force: true });
     if (!this.client) return;
     const mono = this.monotonic();
     if (mono >= this.dueAt(mono)) {

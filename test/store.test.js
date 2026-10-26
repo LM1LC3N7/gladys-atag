@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileStore, newMac, normalizeMemory, serializeMemory } from '../src/store.js';
@@ -26,12 +26,14 @@ test('normalizeMemory: a fresh identity when none, every time bounded, own keys 
     mac: '02-22-33-44-55-66',
     lastAttemptAt: 0,
     pair: { failures: 0, nextAt: 0 },
+    report: { time: null, changedAt: 0 },
   });
   const kept = normalizeMemory(
     {
       mac: '02-AA-BB-CC-DD-EE',
       lastAttemptAt: NOW - 1000,
       pair: { failures: 3, nextAt: NOW + 5000 },
+      report: { time: 843_000_000, changedAt: NOW + 9999 },
     },
     NOW,
     fixed,
@@ -40,6 +42,7 @@ test('normalizeMemory: a fresh identity when none, every time bounded, own keys 
     mac: '02-AA-BB-CC-DD-EE',
     lastAttemptAt: NOW - 1000,
     pair: { failures: 3, nextAt: NOW + 5000 },
+    report: { time: 843_000_000, changedAt: NOW },
   });
   // A clock set back: a time in the future counts as now, a pairing wait capped to 15 min.
   const future = normalizeMemory(
@@ -79,8 +82,18 @@ test('fileStore: round trip, temporary file and rename, mode 0600, odd files ign
   }
   await Promise.all([store.save({ a: 1 }), store.save({ a: 2 })]);
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { a: 2 });
+  // Only a missing file is a first start: anything else throws, nothing drawn.
   await writeFile(path, 'not json');
-  assert.equal(await store.load(), null);
+  await assert.rejects(store.load(), (err) => err.code === 'EINVAL');
+  await writeFile(path, '[1]');
+  await assert.rejects(store.load(), (err) => err.code === 'EINVAL');
   await writeFile(path, `{"x":"${'y'.repeat(5000)}"}`);
-  assert.equal(await store.load(), null, 'a large file is not ours');
+  await assert.rejects(store.load(), (err) => err.code === 'EFBIG', 'a large file is not ours');
+  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
+    await writeFile(path, '{}');
+    await chmod(path, 0o000);
+    await assert.rejects(store.load(), (err) => err.code === 'EACCES');
+    await chmod(path, 0o600);
+  }
+  assert.equal(await fileStore(join(dir, 'missing.json')).load(), null);
 });

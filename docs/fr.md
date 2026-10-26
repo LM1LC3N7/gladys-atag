@@ -32,29 +32,36 @@ Intégration non officielle, sans lien avec Atag.
   box. Le thermostat ne parle qu'en http simple sur ce port : une adresse
   `https://` est refusée avec un message clair. Aucun identifiant ni mot de
   passe : le thermostat reconnaît Gladys par l'appairage ci-dessous.
-- **Appairage** : à la première lecture, le thermostat affiche sur son écran
-  une demande d'appairage au nom de « Gladys ». Confirmez-la sur le
-  thermostat. Tant qu'elle n'est pas confirmée, Gladys la redemande (après
-  1 min, puis 2, 4, 8, 15 min au plus) et le statut de l'intégration le dit ;
-  enregistrer la configuration ou appuyer sur **Tester la connexion** la
-  redemande à la lecture suivante (jamais plus d'une lecture par minute).
-  L'identité que Gladys donne au thermostat est tirée au sort une fois et
-  gardée dans les données de l'intégration : si ces données sont perdues, le
-  thermostat redemande une confirmation.
+- **Appairage** : Gladys lit d'abord le thermostat ; s'il répond que Gladys
+  n'est pas (ou plus) acceptée, Gladys envoie une demande d'appairage au nom
+  de « Gladys », que vous confirmez sur l'écran du thermostat. Sans
+  confirmation, la demande est renvoyée après 1 min, puis 2, 4, 8, 15 min,
+  **8 demandes au plus** ; ensuite Gladys n'en envoie plus seule et le statut
+  vous dit d'appuyer sur **Tester la connexion** (ou d'enregistrer la
+  configuration) pour en renvoyer une. Ce compte est gardé à travers un
+  redémarrage. L'identité que Gladys donne au thermostat est tirée au sort
+  une fois et gardée dans les données de l'intégration (`/data`) :
+  - pas encore de fichier (premier démarrage) : une identité neuve est tirée
+    et écrite ;
+  - fichier présent mais illisible (droits, disque, contenu abîmé) : Gladys
+    ne le réécrit pas et n'envoie rien au thermostat (pas de demande
+    d'appairage avec une nouvelle identité) ; le statut le dit et le fichier
+    est relu chaque minute ;
+  - fichier impossible à écrire : l'intégration fonctionne, mais le statut
+    prévient qu'un redémarrage redemandera l'appairage.
 - **Commandes** : trois options, toutes désactivées par défaut (voir
   Commandes).
 - **Plafond d'eau chaude (°C)** : la consigne d'eau chaude la plus haute que
-  Gladys peut envoyer, 55 °C par défaut ; jamais plus de 60 °C quelle que
-  soit la valeur saisie (une valeur hors de 30 à 60 °C est refusée avec un
-  message et 55 °C reste utilisé).
+  Gladys peut envoyer, 55 °C par défaut et 60 °C au plus (une valeur hors de
+  30 à 60 °C est signalée dans le statut et 55 °C reste utilisé).
 - **Langue des appareils** : français (par défaut) ou anglais, pour les noms
   des appareils et les textes du programme, de la météo, du mode d'eau chaude
   et de l'état.
 
 Ouvrez ensuite l'onglet **Découverte** et créez le thermostat et la chaudière.
-Le bouton **Tester la connexion** redemande l'appairage si besoin, lit le
-thermostat quand la cadence le permet (jamais plus d'une fois par minute) et
-rend compte.
+Le bouton **Tester la connexion** relit la configuration, redemande
+l'appairage si besoin, lit le thermostat si la dernière lecture date d'au
+moins une minute, et rend compte.
 
 ## Commandes
 
@@ -64,68 +71,110 @@ service Thermostat de Gladys de changer une seule chose :
 
 - **Consigne de la pièce** (`Autoriser le changement de la consigne de la
 pièce`) : de **4 à 27 °C** (la plage de la molette de l'Atag One), au demi
-  degré ; une valeur en dehors est refusée, jamais ramenée dans les bornes.
+  degré ; une valeur en dehors est refusée, pas ramenée dans les bornes.
 - **Mode de régulation** (`Autoriser le changement du mode de régulation`) :
   **Chauffage** (régulation classique, valeur 1) ou **Automatique** (selon la
-  météo, valeur 3). Ce thermostat n'a pas de mode « arrêt » : la valeur 0 est
-  refusée avec un message. Le programme (manuel, vacances…) est en lecture
-  seule dans cette version.
+  météo, valeur 3). L'interface locale connue de l'Atag One (pyatag, Home
+  Assistant) ne propose pas d'arrêt : la valeur Arrêt (0), envoyée par
+  exemple par le service Thermostat ou un assistant vocal, est refusée avec
+  un message. Pour moins chauffer depuis Gladys, baissez la consigne (jusqu'à
+  4 °C, option cochée) ; pour arrêter le chauffage, faites-le sur le
+  thermostat. Le programme (manuel, vacances…) est en lecture seule.
 - **Consigne d'eau chaude** (`Autoriser le changement de la consigne d'eau
-chaude`) : entre le minimum et le maximum que le thermostat annonce, et
-  sous le plafond de la configuration (55 °C par défaut, 60 °C au plus) ; une
-  valeur en dehors est refusée, jamais ramenée dans les bornes.
+chaude`) : entre le minimum et le maximum que le thermostat annonce
+  (`dhw_min_set`, `dhw_max_set`, relus à chaque commande) et sous le plafond
+  de la configuration (55 °C par défaut, 60 °C au plus) ; une valeur en dehors
+  est refusée, pas ramenée dans les bornes. Pas proposée sur un thermostat
+  réglé en Fahrenheit : on ne sait pas encore si ses valeurs d'eau chaude
+  suivent cette unité (elles ne sont pas publiées non plus).
 
-Aucune fonctionnalité n'est un interrupteur : « éteins tout » ne peut pas
-agir sur la chaudière ni sur l'eau chaude.
+Aucune fonctionnalité n'est un interrupteur : « éteins tout » n'agit pas sur
+la chaudière ni sur l'eau chaude.
 
-Pour chaque commande :
+Juste avant d'agir, Gladys relit le thermostat. **Rien n'est envoyé** dans les
+cas suivants, chacun avec son message :
 
-- Juste avant d'agir, Gladys relit le thermostat. Rien n'est envoyé dans les
-  cas suivants : l'option est décochée (vérifiée à l'arrivée de la commande et
-  juste avant l'envoi) ; la valeur est hors bornes ; l'appairage n'est pas
-  confirmé ; la relecture échoue ou dépasse le budget de temps ; un autre
-  thermostat répond à l'adresse ; la configuration a changé entre-temps ; la
-  valeur est déjà celle demandée (la commande est alors un succès sans envoi).
-- Quand la commande ne peut pas être vérifiée en 3,5 s, rien n'est envoyé et
-  Gladys affiche un échec (pas d'action après un échec affiché). Une fois
-  envoyée, Gladys répond au plus 4,3 s après votre commande.
-- La valeur affichée ne change qu'à la **relecture 5 s après l'envoi** : c'est
-  elle qui confirme la commande. Si le thermostat ne l'a pas appliquée, la
-  valeur affichée reste l'ancienne.
-- Les commandes passent une par une (un seul thermostat), et chaque requête
-  au thermostat est espacée d'au moins une seconde (il coupe les appels plus
-  rapprochés).
+- l'option de la commande est décochée (vérifiée à l'arrivée de la commande
+  et juste avant l'envoi) ;
+- la valeur n'est pas un nombre, ou sort de ses bornes (pour l'eau chaude :
+  celles du thermostat relues, sous le plafond) ;
+- l'intégration n'a pas d'adresse valide, ou ses données (`/data`) sont
+  illisibles ;
+- l'appairage n'est pas confirmé (connu par une lecture précédente, ou dit
+  par la relecture de la commande) ;
+- la relecture échoue, ou la commande ne peut plus partir dans les 3,5 s qui
+  suivent son arrivée (par exemple quand une commande précédente est encore
+  en cours) ;
+- un autre thermostat répond à l'adresse ;
+- la configuration a changé entre-temps ;
+- l'eau chaude est demandée sur un thermostat en Fahrenheit, ou le thermostat
+  ne donne pas de bornes d'eau chaude utilisables ;
+- plus de 6 commandes du même genre ont été envoyées dans la dernière minute
+  (une scène qui boucle) ;
+- la valeur est déjà celle demandée : la commande est alors un succès, sans
+  envoi.
+
+Une fois la commande partie (au plus 3,5 s après son arrivée), le thermostat
+a 10 s pour répondre ; Gladys reçoit sa réponse au plus tard 4,3 s après la
+commande. Trois issues :
+
+- le thermostat a répondu : succès ;
+- il n'a pas encore répondu à 4,3 s : succès « envoyée, pas encore de
+  réponse », la suite est journalisée ;
+- la connexion est coupée ou reste sans réponse avant 4,3 s : échec
+  « envoyée, sans réponse du thermostat » — **la commande a pu être
+  appliquée** ; un refus HTTP du thermostat donne « refusée ».
+
+Dans tous les cas où la commande est partie, le thermostat est relu **5 s
+après** : seule cette relecture change la valeur affichée. Si elle ne montre
+pas la valeur demandée, le journal et le statut le disent. Une commande n'est
+jamais renvoyée. Les commandes passent une par une, et les requêtes au
+thermostat sont espacées d'au moins une seconde (il coupe les appels plus
+rapprochés).
 
 ## Rafraîchissement et limites
 
-- Le thermostat est lu toutes les **60 secondes**. Les états ont donc jusqu'à
-  une minute de retard. Seules les valeurs qui changent sont envoyées à
-  Gladys (et chacune au moins toutes les 30 minutes). Rien ne le lit plus
-  souvent : ni le bouton de test, ni la Découverte, ni une reconnexion à
-  Gladys, ni un redémarrage de l'intégration (l'heure de la dernière lecture
-  est gardée).
-- Chaque rapport du thermostat porte sa propre heure. Si elle ne bouge plus
-  pendant plus de 2 heures, les valeurs ne sont plus publiées (elles seraient
-  périmées), le badge des appareils passe en « dégradé » et le statut le dit ;
-  tout reprend dès que le rapport bouge.
+- La boucle lit le thermostat toutes les **60 secondes**. Les états ont donc
+  jusqu'à une minute de retard ; seules les valeurs qui changent sont
+  envoyées à Gladys (et chacune au moins toutes les 30 minutes). Le bouton de
+  test, la Découverte, une reconnexion à Gladys et un redémarrage de
+  l'intégration ne lisent pas plus tôt que 60 s après la dernière lecture
+  (son heure est gardée dans `/data` à chaque lecture). Une commande ajoute
+  sa relecture fraîche et sa relecture de confirmation 5 s après.
+- Une valeur lue il y a plus de 2 minutes n'est pas republiée (par exemple au
+  retour de Gladys après une longue absence) : la lecture suivante, faite
+  aussitôt si elle est due, publie les valeurs du moment.
+- Chaque rapport du thermostat porte sa propre heure (`report_time`). Si elle
+  ne bouge plus pendant plus de 2 heures, les valeurs ne sont plus publiées,
+  le badge des appareils passe en « dégradé » et le statut le dit ; tout
+  reprend dès que le rapport bouge. Cette heure est gardée à travers un
+  redémarrage. Un thermostat qui ne donne pas cette heure ne peut pas être
+  vérifié ainsi.
+- Une valeur hors des bornes de sa fonctionnalité (une sonde absente, une
+  réponse aberrante) n'est pas publiée.
 - Les températures de l'eau et de l'extérieur sont des sondes : Gladys ne les
   compte pas dans la température de la pièce où se trouve le thermostat.
-- Un thermostat réglé en Fahrenheit est lu et commandé en °C (converti).
+- Un thermostat réglé en Fahrenheit : températures de la pièce, de
+  l'extérieur et du circuit converties en °C, consigne de la pièce envoyée en
+  °F ; eau chaude ni publiée ni commandée (voir plus haut).
 - Le thermostat est reconnu par son **identifiant** (`status.device_id`), pas
   par son adresse : si un autre thermostat répond à l'adresse, les appareils
   créés passent injoignables et le nouveau apparaît dans la Découverte.
 
 ## Problèmes de connexion
 
-- **Appairage à confirmer** : voir Configuration. Un rapport avec un appairage
-  perdu (le thermostat a retiré Gladys) revient à l'appairage.
+- **Appairage à confirmer** : voir Configuration.
 - **Thermostat injoignable** : tous les appareils apparaissent injoignables ;
   nouvel essai après 1 min, puis de plus en plus rarement jusqu'à toutes les
-  10 min (jamais plus vite que la lecture normale). Une connexion que le
-  thermostat ferme pendant une lecture est retentée (3 essais) ; une commande
-  n'est jamais renvoyée (elle a pu être appliquée : la relecture le dit).
+  10 min. Une connexion que le thermostat ferme pendant une lecture est
+  retentée (3 essais) ; une commande n'est pas renvoyée.
+- **Le thermostat répond par une erreur HTTP N** : il répond, mais refuse ;
+  même rythme de nouvel essai.
 - **Cette adresse ne répond pas comme un Atag One** : vérifiez l'adresse et
   le port (10000 par défaut).
+- **Configuration de Gladys pas encore lue** : l'intégration la redemande
+  après 30 s, 1, 2, 4, 8 min puis toutes les 10 min, sans fin, et le statut le
+  dit.
 - Les journaux ne contiennent pas le texte des réponses du thermostat,
   seulement des codes (HTTP 500, pas de connexion…), ni l'identité
   d'appairage.

@@ -106,6 +106,8 @@ export function createFakeThermostat(options = {}) {
     gate: null,
     /** The raw text answered instead of JSON. */
     rawBody: null,
+    /** The timers of the test: the transport timeout is then honoured. */
+    timers: null,
   };
 
   const json = (status, value) => ({
@@ -177,7 +179,21 @@ export function createFakeThermostat(options = {}) {
       throw err;
     }
     options.onSent?.();
-    return answer(url.pathname, body);
+    const answered = answer(url.pathname, body);
+    // The timeout of the transport, on the clock of the test when given.
+    if (!fake.timers || !options.timeout) return answered;
+    let id;
+    const limit = new Promise((_, reject) => {
+      id = fake.timers.setTimeout(
+        () => reject(new ThermostatError(CODES.TIMEOUT, 'No answer in time')),
+        options.timeout,
+      );
+    });
+    try {
+      return await Promise.race([answered, limit]);
+    } finally {
+      fake.timers.clearTimeout(id);
+    }
   };
 
   /** The same interface on a loopback HTTP server: { origin, close }. */
