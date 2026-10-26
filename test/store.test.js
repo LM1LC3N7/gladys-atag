@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileStore, newMac, normalizeMemory, serializeMemory } from '../src/store.js';
@@ -62,8 +62,9 @@ test('normalizeMemory: a fresh identity when none, every time bounded, own keys 
   assert.deepEqual(serializeMemory({ ...kept, extra: 1 }), kept);
 });
 
-test('fileStore: round trip, temporary file and rename, mode 0600, odd files ignored', async () => {
+test('fileStore: round trip, temporary file and rename, mode 0600, odd files ignored', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'atag-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
   const path = join(dir, 'state.json');
   const store = fileStore(path);
   assert.equal(await store.load(), null);

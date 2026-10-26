@@ -84,18 +84,18 @@ up to date at the end of every milestone.
       /data unreadable: the status and docs say to reinstall (the core erases
       /data at uninstall); after the 8 pairing requests, a plain read every
       hour sees a pairing confirmed late.
-- [ ] **SDK 0.16.0**: not on npm yet (`npm view` gives 0.15.0 on
-      2026-10-26): migrate once published, with the next wave,
-      with `keywords` (atag, one, thermostat, boiler, chaudière, heating,
-      chauffage, hot water) and `countries` (NL, BE, DE, GB, FR) and
-      `gladys_version: ">=5.3.0"`; consider `poll_frequency` then.
+- [ ] **Manifest 5.3** (when Gladys 5.3 is widespread): `keywords` (atag, one,
+      thermostat, boiler, chaudière, heating, chauffage, hot water), `countries`
+      (NL, BE, DE, GB, FR), `gladys_version: ">=5.3.0"`; consider `poll_frequency`.
 
 ## Decisions
 
 - **Version**: 0.1.0 set by hand in `package.json`, `package-lock.json`, the
   manifest and the `docker_image` tag; the first Release (patch) gives 0.1.1.
-- **SDK ^0.15.0**: the template asked for ^0.16.0, not on npm on 2026-10-25;
-  pinned back to ^0.15.0 (migration planned, see Status).
+- **SDK `^0.16.0`** (2026-10-26, migration wave 1): 0.16.0 is on npm since
+  2026-10-25 (a stale npm cache said otherwise); it adds the ai, tts and music
+  types; no effect here (`should_poll` explicit or `poll_frequency` unused). `keywords`, `countries` and `gladys_version >= 5.3.0` wait until
+  Gladys 5.3 is widespread.
 - **License**: Apache-2.0, the standard text (no person named), shipped in the
   image with `THIRD_PARTY_NOTICES.md` (full MIT notice of pyatag with its
   "YOUR NAME" placeholder as it is, Apache-2.0 of Home Assistant).
