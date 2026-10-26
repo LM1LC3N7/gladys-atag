@@ -1,6 +1,6 @@
 {
   "name": "gladys-atag",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Gladys Assistant external integration for the Atag One thermostat (Atag boilers) through its local HTTP interface: room temperature and setpoint, control mode, boiler, hot water, pressure. Unofficial, not affiliated with Atag.",
   "type": "module",

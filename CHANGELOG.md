@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-26
+
 ### Changed
 
 - Integration SDK 0.16 (no change for the devices).
@@ -36,5 +38,6 @@ the notes of the version's GitHub Release.
 - A report whose own time stops moving for 2 hours is no longer published.
 - "Test the connection" button; documentation in English and French.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-atag/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/LM1LC3N7/gladys-atag/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/LM1LC3N7/gladys-atag/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/LM1LC3N7/gladys-atag/releases/tag/v0.1.1
