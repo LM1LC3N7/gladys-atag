@@ -31,7 +31,7 @@ up to date at the end of every milestone.
       3.5 s budget, answer at 4.3 s at most, confirmation by the read 5 s
       later; "Test the connection"; docs en/fr. Tested with unit tests
       against the SDK's fake Gladys and a fake thermostat (in memory and on
-      loopback), a real-clock test (×100), the decoding against the Home
+      loopback), a real-clock test (×20), the decoding against the Home
       Assistant fixture. **Never tested on a real thermostat.**
 - [ ] **Milestone 2 — real thermostat** (a tester with an Atag One): record
       real answers as fixtures (device id anonymized), fix what differs. To

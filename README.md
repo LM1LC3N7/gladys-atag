@@ -73,7 +73,7 @@ npx github:GladysAssistant/integration-store .  # store admission checks
 The tests run against the SDK's fake Gladys and a fake thermostat
 (`test/helpers/fakeThermostat.js`, in memory and on loopback), on a virtual
 clock that moves at every read of it, plus one test on the real clock (sped
-up 100 times). No test touches a real thermostat or the Internet. The
+up 20 times). No test touches a real thermostat or the Internet. The
 decoding is checked against the test fixture of Home Assistant.
 
 ## Credits
