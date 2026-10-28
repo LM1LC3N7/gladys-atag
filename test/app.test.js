@@ -431,9 +431,10 @@ test('configuration problems are said, nothing is read', async () => {
     [{ host: 'https://192.168.1.20' }, /no https/],
     [{ host: 'http://user:pw@192.168.1.20' }, /user name or a password/],
     [{ host: '192.168.1.20/path' }, /not valid/],
-    [{ dhw_max: 70 }, /from 30 to 65 °C: 65 °C is used/],
-    [{ dhw_max: 65.5 }, /from 30 to 65 °C: 65 °C is used/],
-    [{ dhw_max: 'abc' }, /65 °C is used/],
+    [{ dhw_max: 70 }, /from 30 to 65 °C: nothing is read or sent until it is corrected/],
+    [{ dhw_max: 65.5 }, /from 30 to 65 °C: nothing is read or sent until it is corrected/],
+    [{ dhw_max: 'abc' }, /nothing is read or sent until it is corrected/],
+    [{ dhw_max: 25 }, /nothing is read or sent until it is corrected/],
   ]) {
     const { gladys, fake, app } = await boot({ config });
     assert.equal(gladys.fake.connectionStatus.connected, false, JSON.stringify(config));

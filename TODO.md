@@ -170,7 +170,8 @@ up to date at the end of every milestone.
   `min(dhw_max_set, cap)`, both bounds REQUIRED in the fresh read and
   plausible °C values (max 30-70, min 10-max), no fallback; the cap being the
   `dhw_max` option (65 °C by default, never above 65 °C whatever is entered:
-  an invalid cap is said in the status and 65 is used). Refused on a
+  an invalid cap is said in the status and the integration stops: nothing is
+  read or sent until it is corrected). Refused on a
   thermostat in Fahrenheit (unit of the hot water fields not verified, see
   Status). The value written is the value checked, never converted; the
   client refuses any `dhw_temp_setp` not finite or above 65 as a last guard.

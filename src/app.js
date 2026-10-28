@@ -392,7 +392,7 @@ export class AtagApp {
       );
     }
     if (config.dhwMaxInvalid) {
-      return T.status.dhwMaxInvalid(DHW_SETPOINT.FLOOR, DHW_SETPOINT.HARD_MAX, config.dhwMax);
+      return T.status.dhwMaxInvalid(DHW_SETPOINT.FLOOR, DHW_SETPOINT.HARD_MAX);
     }
     return null;
   }

@@ -51,7 +51,7 @@ Unofficial integration, not affiliated with Atag.
 - **Commands**: three options, all off by default (see Commands).
 - **Hot water cap (°C)**: the highest hot water setpoint Gladys may send,
   65 °C by default and 65 °C at most (a value outside 30 to 65 °C is said in
-  the status and 65 °C stays in use).
+  the status, and nothing is read or sent until it is corrected).
 - **Language of the devices**: French (default) or English, for the device
   names and the program, weather, hot water mode and status texts.
 

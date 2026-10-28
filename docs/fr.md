@@ -56,7 +56,8 @@ Intégration non officielle, sans lien avec Atag.
   Commandes).
 - **Plafond d'eau chaude (°C)** : la consigne d'eau chaude la plus haute que
   Gladys peut envoyer, 65 °C par défaut et 65 °C au plus (une valeur hors de
-  30 à 65 °C est signalée dans le statut et 65 °C reste utilisé).
+  30 à 65 °C est signalée dans le statut, et rien n'est lu ni envoyé tant
+  qu'elle n'est pas corrigée).
 - **Langue des appareils** : français (par défaut) ou anglais, pour les noms
   des appareils et les textes du programme, de la météo, du mode d'eau chaude
   et de l'état.

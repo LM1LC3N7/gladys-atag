@@ -53,8 +53,9 @@ export function parseHost(value) {
 
 /**
  * The hot water cap the user chose: a number between the floor and HARD_MAX;
- * anything else (empty, text, above the hard cap) gives the default, said in
- * `dhwMaxInvalid` so the status tells it.
+ * absent gives the default. Anything else (text, below the floor, above
+ * the hard cap) sets `dhwMaxInvalid`: the status tells it and the integration
+ * stops, nothing is read or sent until it is corrected.
  */
 export function parseDhwMax(value) {
   if (value === undefined || value === null || value === '') return { value: DEFAULTS.dhw_max };

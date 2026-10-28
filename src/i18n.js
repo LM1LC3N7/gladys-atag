@@ -128,9 +128,9 @@ export const T = {
       en: 'The thermostat has no https on its local port: enter the address without https://.',
       fr: 'Le thermostat n’a pas de https sur son port local : indiquez l’adresse sans https://.',
     },
-    dhwMaxInvalid: (floor, hardMax, used) => ({
-      en: `The hot water cap must be a number from ${floor} to ${hardMax} °C: ${used} °C is used.`,
-      fr: `Le plafond d’eau chaude doit être un nombre de ${floor} à ${hardMax} °C : ${used} °C est utilisé.`,
+    dhwMaxInvalid: (floor, hardMax) => ({
+      en: `The hot water cap must be a number from ${floor} to ${hardMax} °C: nothing is read or sent until it is corrected.`,
+      fr: `Le plafond d’eau chaude doit être un nombre de ${floor} à ${hardMax} °C : rien n’est lu ni envoyé tant qu’il n’est pas corrigé.`,
     }),
     pairing: (delay) =>
       join(
