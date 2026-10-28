@@ -100,8 +100,8 @@ test('the configuration matches the code; every command off by default; no secre
     assert.equal(fields[key].default, false, key);
   }
   assert.equal(fields.dhw_max.type, 'number');
-  assert.equal(fields.dhw_max.default, 55);
-  assert.match(fields.dhw_max.description.en, /never above 60 °C/);
+  assert.equal(fields.dhw_max.default, 65);
+  assert.match(fields.dhw_max.description.en, /never above 65 °C/);
   assert.ok(!manifest.config_schema.some((f) => f.type === 'secret'), 'nothing secret to keep');
   assert.ok(
     !manifest.config_schema.some((f) => f.key.startsWith('gladys_')),

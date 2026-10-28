@@ -132,35 +132,48 @@ test('control mode: Heating (1) and Auto (3) only; ch_control_mode 1 / 0', async
   assert.deepEqual(fake.updates.at(-1), { ch_control_mode: 0 });
 });
 
-test('hot water setpoint: the cap of the user (55 by default, 60 at most) and the bounds of the thermostat', async () => {
+test('hot water setpoint: the cap of the user (65 by default, 65 at most) and the bounds of the thermostat', async () => {
   const { gladys, fake } = await boot({ config: ALL });
   const b = boiler();
   for (const [value, pattern] of [
-    [56, /from 30 to 55 °C/],
-    [29, /from 30 to 55 °C/],
-    [35, /from 40 to 55 °C/], // the thermostat's dhw_min_set is 40
+    [65.5, /from 30 to 65 °C/],
+    [66, /from 30 to 65 °C/],
+    [29, /from 30 to 65 °C/],
+    [35, /from 40 to 65 °C/], // the thermostat's dhw_min_set is 40
   ]) {
     const result = await set(gladys, b, 'dhw_target', value);
     assert.equal(result.success, false, String(value));
     assert.match(result.error, pattern);
   }
   assert.equal(fake.updates.length, 0);
+  assert.equal((await set(gladys, b, 'dhw_target', 65)).success, true);
+  assert.deepEqual(fake.updates, [{ dhw_temp_setp: 65 }]);
+});
+
+test('hot water setpoint: a lower cap chosen by the user is kept', async () => {
+  const { gladys, fake } = await boot({ config: { ...ALL, dhw_max: 55 } });
+  const b = boiler();
+  const refused = await set(gladys, b, 'dhw_target', 56);
+  assert.equal(refused.success, false);
+  assert.match(refused.error, /from 30 to 55 °C/);
   assert.equal((await set(gladys, b, 'dhw_target', 55)).success, true);
   assert.deepEqual(fake.updates, [{ dhw_temp_setp: 55 }]);
 });
 
-test('hot water setpoint: a cap of 60 chosen by the user, never above; the thermostat may cap lower', async () => {
+test('hot water setpoint: a cap of 65 chosen by the user, never above; the thermostat may cap lower', async () => {
   const fake = createFakeThermostat({ dhwMaxSet: 58 });
-  const { gladys } = await boot({ config: { ...ALL, dhw_max: 60 }, fake });
+  const { gladys } = await boot({ config: { ...ALL, dhw_max: 65 }, fake });
   const b = boiler();
-  const refused = await set(gladys, b, 'dhw_target', 59);
-  assert.equal(refused.success, false);
-  assert.match(refused.error, /from 40 to 58 °C/);
+  for (const value of [59, 65]) {
+    const refused = await set(gladys, b, 'dhw_target', value);
+    assert.equal(refused.success, false, String(value));
+    assert.match(refused.error, /from 40 to 58 °C/);
+  }
   assert.equal((await set(gladys, b, 'dhw_target', 58)).success, true);
   assert.deepEqual(fake.updates, [{ dhw_temp_setp: 58 }]);
-  const above = await set(gladys, b, 'dhw_target', 61);
+  const above = await set(gladys, b, 'dhw_target', 65.5);
   assert.equal(above.success, false);
-  assert.match(above.error, /from 30 to 60 °C/);
+  assert.match(above.error, /from 30 to 65 °C/);
 });
 
 test('hot water setpoint in Fahrenheit or without the bounds of the thermostat: refused, nothing written', async () => {
@@ -193,11 +206,12 @@ test('hot water setpoint in Fahrenheit or without the bounds of the thermostat: 
   assert.deepEqual(fake.updates, [{ dhw_temp_setp: 60 }]);
 });
 
-test('the last guard of the client: nothing above 60 for the hot water, known keys, finite numbers', async () => {
+test('the last guard of the client: nothing above 65 for the hot water, known keys, finite numbers', async () => {
   const fake = createFakeThermostat();
   const { app } = await boot({ fake });
   for (const control of [
-    { dhw_temp_setp: 61 },
+    { dhw_temp_setp: 65.5 },
+    { dhw_temp_setp: 66 },
     { dhw_temp_setp: 140 },
     { dhw_temp_setp: NaN },
     { x: 1 },

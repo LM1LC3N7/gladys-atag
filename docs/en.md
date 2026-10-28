@@ -50,8 +50,8 @@ Unofficial integration, not affiliated with Atag.
     warns that a restart will ask for the pairing again.
 - **Commands**: three options, all off by default (see Commands).
 - **Hot water cap (°C)**: the highest hot water setpoint Gladys may send,
-  55 °C by default and 60 °C at most (a value outside 30 to 60 °C is said in
-  the status and 55 °C stays in use).
+  65 °C by default and 65 °C at most (a value outside 30 to 65 °C is said in
+  the status and 65 °C stays in use).
 - **Language of the devices**: French (default) or English, for the device
   names and the program, weather, hot water mode and status texts.
 
@@ -79,7 +79,7 @@ service of Gladys change one single thing:
 - **Hot water setpoint** (`Allow changing the hot water setpoint`): between
   the minimum and the maximum the thermostat announces (`dhw_min_set`,
   `dhw_max_set`, read again at each command) and under the cap of the
-  configuration (55 °C by default, 60 °C at most); a value outside is refused,
+  configuration (65 °C by default, 65 °C at most); a value outside is refused,
   not clamped. Not offered on a thermostat set to Fahrenheit: whether its hot
   water values follow that unit is not known yet (they are not published
   either).

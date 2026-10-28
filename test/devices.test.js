@@ -58,7 +58,7 @@ test('ids and names, in both languages; never a switch; every feature has its bo
   const dhw = b.features.find((f) => f.external_id.endsWith(':dhw_target'));
   assert.deepEqual(
     [dhw.min, dhw.max, dhw.category, dhw.type],
-    [30, 60, 'water-heater', 'target-temperature'],
+    [30, 65, 'water-heater', 'target-temperature'],
   );
 });
 

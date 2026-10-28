@@ -57,10 +57,10 @@ export const ROOM_SETPOINT = Object.freeze({ MIN: 4, MAX: 27, STEP: 0.5 });
 
 /**
  * The hot water setpoint: never above HARD_MAX whatever the thermostat says,
- * the user's own cap (`dhw_max`, 55 °C by default) at most; the floor is the
+ * the user's own cap (`dhw_max`, 65 °C by default) at most; the floor is the
  * `dhw_min_set` of the thermostat, else FLOOR. Half degrees.
  */
-export const DHW_SETPOINT = Object.freeze({ FLOOR: 30, DEFAULT_MAX: 55, HARD_MAX: 60, STEP: 0.5 });
+export const DHW_SETPOINT = Object.freeze({ FLOOR: 30, DEFAULT_MAX: 65, HARD_MAX: 65, STEP: 0.5 });
 
 export const DEFAULT_PORT = 10000;
 

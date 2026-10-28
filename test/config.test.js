@@ -26,16 +26,18 @@ test('parseHost: IP, name, port, http scheme; the rest refused', () => {
   assert.deepEqual(parseHost('a b'), { error: 'invalid' });
 });
 
-test('parseDhwMax: 30 to 60, half degrees, the default otherwise', () => {
-  assert.deepEqual(parseDhwMax(undefined), { value: 55 });
-  assert.deepEqual(parseDhwMax(''), { value: 55 });
+test('parseDhwMax: 30 to 65, half degrees, the default otherwise', () => {
+  assert.deepEqual(parseDhwMax(undefined), { value: 65 });
+  assert.deepEqual(parseDhwMax(''), { value: 65 });
   assert.deepEqual(parseDhwMax(50), { value: 50 });
   assert.deepEqual(parseDhwMax('48.7'), { value: 48.5 });
   assert.deepEqual(parseDhwMax(60), { value: 60 });
-  assert.deepEqual(parseDhwMax(61), { value: 55, invalid: true });
-  assert.deepEqual(parseDhwMax(29), { value: 55, invalid: true });
-  assert.deepEqual(parseDhwMax('abc'), { value: 55, invalid: true });
-  assert.deepEqual(parseDhwMax(true), { value: 55, invalid: true });
+  assert.deepEqual(parseDhwMax(65), { value: 65 });
+  assert.deepEqual(parseDhwMax(65.5), { value: 65, invalid: true });
+  assert.deepEqual(parseDhwMax(66), { value: 65, invalid: true });
+  assert.deepEqual(parseDhwMax(29), { value: 65, invalid: true });
+  assert.deepEqual(parseDhwMax('abc'), { value: 65, invalid: true });
+  assert.deepEqual(parseDhwMax(true), { value: 65, invalid: true });
 });
 
 test('normalizeConfig: defaults, booleans in every form, language', () => {
@@ -46,7 +48,7 @@ test('normalizeConfig: defaults, booleans in every form, language', () => {
   assert.equal(config.allowSetpoint, false);
   assert.equal(config.allowMode, false);
   assert.equal(config.allowDhwSetpoint, false);
-  assert.equal(config.dhwMax, 55);
+  assert.equal(config.dhwMax, 65);
   assert.equal(config.dhwMaxInvalid, false);
   const on = normalizeConfig({
     host: 'x',

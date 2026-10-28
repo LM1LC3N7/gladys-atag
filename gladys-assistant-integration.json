@@ -77,11 +77,11 @@
       "type": "number",
       "label": { "en": "Hot water cap (°C)", "fr": "Plafond d'eau chaude (°C)" },
       "description": {
-        "en": "The hot water setpoint Gladys may send at most: 55 °C by default (scalding risk above), never above 60 °C whatever is entered here; the thermostat's own limits apply too.",
-        "fr": "La consigne d'eau chaude la plus haute que Gladys peut envoyer : 55 °C par défaut (risque de brûlure au-delà), jamais plus de 60 °C quelle que soit la valeur saisie ici ; les limites du thermostat s'appliquent aussi."
+        "en": "The hot water setpoint Gladys may send at most: 65 °C by default (scalding risk above), never above 65 °C whatever is entered here; the thermostat's own limits apply too.",
+        "fr": "La consigne d'eau chaude la plus haute que Gladys peut envoyer : 65 °C par défaut (risque de brûlure au-delà), jamais plus de 65 °C quelle que soit la valeur saisie ici ; les limites du thermostat s'appliquent aussi."
       },
       "required": false,
-      "default": 55
+      "default": 65
     },
     {
       "key": "language",

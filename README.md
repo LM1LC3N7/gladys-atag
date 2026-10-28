@@ -45,8 +45,8 @@ Gladys ⇄ SDK ⇄ src/app.js (AtagApp)
 - **Commands** (`allow_setpoint`, `allow_mode`, `allow_dhw_setpoint`, all off
   by default): the room setpoint 4 to 27 °C, the control mode Heating / Auto
   (the local interface offers no "off"), the hot water setpoint between the
-  thermostat's bounds (required) and under the user's cap (55 °C by default,
-  60 °C at most), not on a thermostat in Fahrenheit; refused outside, not
+  thermostat's bounds (required) and under the user's cap (65 °C by default,
+  65 °C at most), not on a thermostat in Fahrenheit; refused outside, not
   clamped. The thermostat is read again just before acting; nothing leaves
   past 3.5 s after the command, the exchange then gets 10 s; Gladys is
   answered 4.3 s after the command at the latest; the read 5 s later is the

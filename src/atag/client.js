@@ -217,7 +217,7 @@ export class ThermostatClient {
    * sent once, never tried again (it may have been applied). `deadline`
    * bounds the moment it is SENT; the answer gets the usual timeout. The last
    * guard before the wire: known keys only, finite numbers, the hot water
-   * setpoint never above 60.
+   * setpoint never above 65 (DHW_SETPOINT.HARD_MAX).
    */
   update(control, { deadline, onSent } = {}) {
     const keys = Object.keys(control ?? {});

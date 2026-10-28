@@ -715,7 +715,7 @@ export class AtagApp {
   // the room setpoint (`allow_setpoint`, 4 to 27 °C by half degrees), the
   // control mode (`allow_mode`, Heating or Auto: the local interface offers
   // no "off") and the hot water setpoint (`allow_dhw_setpoint`, between the
-  // thermostat's own bounds and under the user's cap, 60 °C at most; never on
+  // thermostat's own bounds and under the user's cap, 65 °C at most; never on
   // a thermostat in Fahrenheit). The permission is checked when the command
   // arrives AND just before it is sent; a value outside the bounds is
   // refused, never clamped. The commands run one after the other (one

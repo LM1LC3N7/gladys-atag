@@ -26,8 +26,8 @@ up to date at the end of every milestone.
       the time of the last read kept in /data); thermostat unreachable
       retried 1 to 10 min; freshness on `report_time` (2 h); three commands
       behind three options (off by default): room setpoint 4-27 °C, control
-      mode Heating / Auto, hot water setpoint under a cap (55 °C by default,
-      60 at most) and the thermostat's bounds; fresh read before acting,
+      mode Heating / Auto, hot water setpoint under a cap (65 °C by default,
+      65 at most) and the thermostat's bounds; fresh read before acting,
       3.5 s budget, answer at 4.3 s at most, confirmation by the read 5 s
       later; "Test the connection"; docs en/fr. Tested with unit tests
       against the SDK's fake Gladys and a fake thermostat (in memory and on
@@ -148,7 +148,7 @@ up to date at the end of every milestone.
   `report_time` this check cannot apply (documented). A number outside the
   min/max of its feature is not published (sentinels, hostile answers); the
   hot water setpoint read is shown up to 100 °C (the feature stops at the
-  60 °C command cap).
+  65 °C command cap).
 - **Identity checked at every read and before every command**: another
   `device_id` at the address: created devices unreachable, the new one in
   Discovery; a command for another id sends nothing.
@@ -169,11 +169,11 @@ up to date at the end of every milestone.
 - **Hot water setpoint**: `dhw_temp_setp`, between `dhw_min_set` and
   `min(dhw_max_set, cap)`, both bounds REQUIRED in the fresh read and
   plausible °C values (max 30-70, min 10-max), no fallback; the cap being the
-  `dhw_max` option (55 °C by default, never above 60 °C whatever is entered:
-  an invalid cap is said in the status and 55 is used). Refused on a
+  `dhw_max` option (65 °C by default, never above 65 °C whatever is entered:
+  an invalid cap is said in the status and 65 is used). Refused on a
   thermostat in Fahrenheit (unit of the hot water fields not verified, see
   Status). The value written is the value checked, never converted; the
-  client refuses any `dhw_temp_setp` not finite or above 60 as a last guard.
+  client refuses any `dhw_temp_setp` not finite or above 65 as a last guard.
   Hot water mode (Comfort / Eco) read only; no boost, no switch.
 - **Commands**: serialized, fresh `retrieve` within the budget (3.5 s from
   the command, 1.5 s needed to start, 0.6 s kept for the update), option

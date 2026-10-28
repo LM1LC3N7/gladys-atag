@@ -145,7 +145,7 @@ export function buildBoilerDevice(gladys, deviceId, language) {
       named(BF.FLAME, readOnly({ category: C.UNKNOWN, type: T.SENSOR.DECIMAL, min: 0, max: 100 })),
       named(BF.DHW_TEMPERATURE, temperature(0, 120)),
       // A command, refused unless `allow_dhw_setpoint`; the cap of the user
-      // (55 °C by default, 60 °C at most) applies at each command, the
+      // (65 °C by default, 65 °C at most) applies at each command, the
       // thermostat's own bounds too (read at each command).
       named(BF.DHW_TARGET, {
         category: C.WATER_HEATER,

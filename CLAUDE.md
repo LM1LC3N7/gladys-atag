@@ -54,7 +54,7 @@ scripts/cover.mjs                 generates cover.png (plain Node)
 
 Safety rules of this integration (TODO.md, "Decisions"): every command is
 behind its own option, off by default (room setpoint 4-27 °C, control mode
-Heating / Auto, hot water setpoint under a cap of 55 °C by default and 60 °C
+Heating / Auto, hot water setpoint under a cap of 65 °C by default and 65 °C
 at most, the thermostat's own bounds required, never on a thermostat in
 Fahrenheit, and a last guard in the client on the value written); refused
 outside, not clamped; the thermostat is read again just before acting,
